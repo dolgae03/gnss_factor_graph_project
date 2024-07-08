@@ -172,6 +172,7 @@ void printPseudorangeCSV(const std::vector<std::vector<double>>& data) {
 void printGpsTimeCSV(const std::vector<std::pair<int, double>>& data) {
     for (const auto& row : data) {
         std::cout << row.first << ", " << row.second << std::endl;
+        break;
     }
 }
 
@@ -194,16 +195,24 @@ void checkCSVData(const std::vector<std::vector<double>>& pr_data,
     printGpsTimeCSV(time_data);
 }
 
-
-class GpsFactor: public NoiseModelFactor1<Point3> {
+class GpsFactor : public NoiseModelFactorN<Pose3> {
     double pseudorange_;
     Point3 satellite_position_;
 
-    public:
-    GpsFactor(Key j, double pseudorange, const Point3& satellite_position, const SharedNoiseModel& model)
-        : NoiseModelFactor1<Point3>(model, j), pseudorange_(pseudorange), satellite_position_(satellite_position) {}
+public:
+    // Shorthand for a smart pointer to a factor
+    using NoiseModelFactorN<Pose3>::evaluateError;
+    typedef std::shared_ptr<GpsFactor> shared_ptr;
 
-    Vector evaluateError(const Point3& user_position, boost::optional<Matrix&> H = boost::none) const {
+    // Constructor
+    GpsFactor(Key j, double pseudorange, const Point3& satellite_position, const SharedNoiseModel& model)
+        : NoiseModelFactorN<Pose3>(model, j), pseudorange_(pseudorange), satellite_position_(satellite_position) {}
+
+    // Destructor
+    ~GpsFactor() override {}
+
+    // Evaluate error function
+    Vector evaluateError(const Pose3& user_position, OptionalMatrixType H) const override {
         // Calculate the distance between the user position and the satellite position
         double dx = user_position.x() - satellite_position_.x();
         double dy = user_position.y() - satellite_position_.y();
@@ -212,17 +221,23 @@ class GpsFactor: public NoiseModelFactor1<Point3> {
 
         // If the Jacobian matrix H is provided, calculate it
         if (H) {
-        Matrix13 Hx;
-        Hx << (user_position.x() - satellite_position_.x()) / predicted_range,
-                (user_position.y() - satellite_position_.y()) / predicted_range,
-                (user_position.z() - satellite_position_.z()) / predicted_range;
-        *H = Hx;
+            (*H) = (Matrix(1, 3) << (user_position.x() - satellite_position_.x()) / predicted_range,
+                    (user_position.y() - satellite_position_.y()) / predicted_range,
+                    (user_position.z() - satellite_position_.z()) / predicted_range).finished();
         }
 
         // Return the difference between the predicted range and the pseudorange measurement
         return (Vector(1) << predicted_range - pseudorange_).finished();
     }
+
+    // Clone function
+    gtsam::NonlinearFactor::shared_ptr clone() const override {
+        return std::static_pointer_cast<gtsam::NonlinearFactor>(
+            gtsam::NonlinearFactor::shared_ptr(new GpsFactor(*this)));
+    }
+
 };
+
 
 
 int main() {
@@ -240,11 +255,15 @@ int main() {
 
     checkCSVData(pr_data, sv_pos_data, sv_vel_data, time_data);
 
-    // 노이즈 모델 설정 (예제)
-    auto noise = noiseModel::Isotropic::Sigma(1, 3.0); // 표준편차 1.0인 등방성 노이즈 모델
+    std::cout << "Here" << std::endl;
 
-    // 팩터 그래프 생성
+    // 노이즈 모델 설정 (예제)
+    auto unaryNoise =
+      noiseModel::Diagonal::Sigmas(Vector1(1));  
     NonlinearFactorGraph graph;
+    std::shared_ptr<GpsFactor> factor;
+
+    std::cout << "Here2" << std::endl;
 
     // GpsFactor 추가
     for (size_t epoch = 0; epoch < pr_data.size(); ++epoch) {
@@ -259,20 +278,25 @@ int main() {
             Point3 sv_loc(sv_position[0], sv_position[1], sv_position[2]);
 
             // 팩터 그래프에 GpsFactor 추가
-            graph.add(gtsam::make_shared<GpsFactor>(0, pr_value, sv_loc, noise));
+            graph.emplace_shared<GpsFactor>(1, pr_value, sv_loc, unaryNoise);
         }
+        break;
     }
 
     // 초기 사용자 위치 설정 (예제)
     Values initial;
-    initial.insert(0, Point3(0, 0, 0)); // 초기 위치를 (0, 0, 0)으로 설정
+    auto pose = gtsam::Pose3(Rot3(1, 0, 0, 0, -1, 0, 0, 0, -1), Point3(0, 0, 2));
 
+    std::cout << pose.x() << std::endl;
+    initial.insert(1, pose);
+
+    std::cout << "Here33" << std::endl;
     // 최적화 수행
     LevenbergMarquardtOptimizer optimizer(graph, initial);
     Values result = optimizer.optimize();
 
     // 결과 출력
-    Point3 estimated_position = result.at<Point3>(0);
+    Point3 estimated_position = result.at<Point3>(1);
     std::cout << "Estimated user position: " << estimated_position << std::endl;
 
     return 0;
