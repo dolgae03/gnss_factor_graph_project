@@ -7,6 +7,7 @@
 #include <gtsam/slam/BetweenFactor.h>
 #include <fstream>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+#include <gtsam/nonlinear/Marginals.h>
 
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
@@ -221,13 +222,16 @@ public:
 
         // If the Jacobian matrix H is provided, calculate it
         if (H) {
-            (*H) = (Matrix(1, 3) << (user_position.x() - satellite_position_.x()) / predicted_range,
-                    (user_position.y() - satellite_position_.y()) / predicted_range,
-                    (user_position.z() - satellite_position_.z()) / predicted_range).finished();
+            (*H) = (Matrix(1, 3) << fabs(user_position.x() - satellite_position_.x()) / predicted_range,
+                    fabs(user_position.y() - satellite_position_.y()) / predicted_range,
+                    fabs(user_position.z() - satellite_position_.z()) / predicted_range).finished();
         }
 
+        // cout << user_position.x() << " " << user_position.y() << " " <<user_position.z() << endl; 
+        cout << 'a' << endl;
+
         // Return the difference between the predicted range and the pseudorange measurement
-        return (Vector(1) << predicted_range - pseudorange_).finished();
+        return (Vector(1) << fabs(pseudorange_ - predicted_range)).finished();
     }
 
     // Clone function
@@ -257,16 +261,15 @@ int main() {
 
     std::cout << "Here" << std::endl;
 
-    // 노이즈 모델 설정 (예제)
-    auto unaryNoise =
-      noiseModel::Diagonal::Sigmas(Vector1(1));  
+    // 노이즈 모델 설정 (예제) 
     NonlinearFactorGraph graph;
     std::shared_ptr<GpsFactor> factor;
 
     std::cout << "Here2" << std::endl;
-
+    //pr_data.size()
+    const size_t max_epoch = 1;
     // GpsFactor 추가
-    for (size_t epoch = 0; epoch < pr_data.size(); ++epoch) {
+    for (size_t epoch = 0; epoch < max_epoch; ++epoch) {
         for (size_t satellite = 0; satellite < pr_data[epoch].size(); ++satellite) {
             double pr_value = pr_data[epoch][satellite];
 
@@ -278,26 +281,37 @@ int main() {
             Point3 sv_loc(sv_position[0], sv_position[1], sv_position[2]);
 
             // 팩터 그래프에 GpsFactor 추가
-            graph.emplace_shared<GpsFactor>(1, pr_value, sv_loc, unaryNoise);
+            auto unaryNoise = noiseModel::Diagonal::Sigmas(Vector1(1)); 
+            graph.emplace_shared<GpsFactor>(epoch, pr_value, sv_loc, unaryNoise);
+            cout << 'b' << endl;
         }
-        break;
     }
+
+     graph.print("\nFactor Graph:\n");  // print
 
     // 초기 사용자 위치 설정 (예제)
     Values initial;
-    auto pose = gtsam::Pose3(Rot3(1, 0, 0, 0, -1, 0, 0, 0, -1), Point3(0, 0, 2));
 
-    std::cout << pose.x() << std::endl;
-    initial.insert(1, pose);
+    for (size_t epoch = 0; epoch < max_epoch; ++epoch){
+        auto pose = gtsam::Pose3(Rot3(0,0,0,0,0,0,0,0,0), Point3(100, 100, 100));
+        initial.insert(epoch, pose);
+    }   
 
     std::cout << "Here33" << std::endl;
-    // 최적화 수행
-    LevenbergMarquardtOptimizer optimizer(graph, initial);
-    Values result = optimizer.optimize();
 
-    // 결과 출력
-    Point3 estimated_position = result.at<Point3>(1);
-    std::cout << "Estimated user position: " << estimated_position << std::endl;
+    LevenbergMarquardtParams params;
+    params.setMaxIterations(100);  // 최대 반복 횟수 설정
+    params.setRelativeErrorTol(1e-5);  // 상대 오차 허용치 설정
+    params.setAbsoluteErrorTol(1e-5);  // 절대 오차 허용치 설정
+
+    // 최적화 수행
+    LevenbergMarquardtOptimizer optimizer(graph, initial, params);
+    Values result = optimizer.optimize();
+    result.print("Final Result:\n");
+
+    std::cout << "Here44" << std::endl;
+    Marginals marginals(graph, result);
+    std::cout << "x1 covariance:\n" << marginals.marginalCovariance(0) << std::endl;
 
     return 0;
 }
