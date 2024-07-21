@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
 
     ceres::Problem problem;
 
-    const size_t max_epoch = time_data.size();
+    const size_t max_epoch = 10; //time_data.size();
 
     for(size_t epoch=0; epoch < max_epoch; ++epoch){
         double* current_position = new double[3];
@@ -63,18 +63,41 @@ int main(int argc, char** argv) {
     ceres::Solve(options, &problem, &summary);
 
     std::cout << summary.BriefReport() << "\n";
-    for (size_t epoch = 0; epoch < max_epoch; ++epoch) {
-        double* position = state[epoch];
-        std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ")\n";
-        
-        // std::vector<double> ecef_position = {position[0], position[1], position[2]};
+    ceres::Covariance::Options cov_options;
+    ceres::Covariance covariance(cov_options);
 
-        std::vector<double> ecef_position = {position[0], position[1], position[2]};
-        std::vector<double> res = coordinate::ecefToLLA(ecef_position);
+    std::vector<std::pair<const double*, const double*>> covariance_blocks;
+    for (double* position : state) {
+        covariance_blocks.emplace_back(position, position);
+    }
 
-        std::cout << "Epoch(LLA) " << epoch << ": " << res[0] << ", " << res[1] << ", " << res[2] << ")\n";
+    if (covariance.Compute(covariance_blocks, &problem)) {
+        for (size_t epoch = 0; epoch < max_epoch; ++epoch) {
+            double* position = state[epoch];
+            std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << "\n";
+            
+            // std::vector<double> ecef_position = {position[0], position[1], position[2]};
 
-        delete[] position; // 메모리 해제
+            std::vector<double> ecef_position = {position[0], position[1], position[2]};
+            std::vector<double> res = coordinate::ecefToLLA(ecef_position);
+
+            std::cout << "Epoch(LLA) " << epoch << ": " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
+
+            // 공분산 출력
+            double covariance_matrix[3 * 3];
+            covariance.GetCovarianceBlock(position, position, covariance_matrix);
+            std::cout << "Covariance Matrix:\n";
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 3; ++j) {
+                    std::cout << covariance_matrix[3 * i + j] << " ";
+                }
+                std::cout << "\n";
+            }
+
+            delete[] position; // 메모리 해제
+        }
+    } else {
+        std::cerr << "Failed to compute covariance." << std::endl;
     }
 
 
