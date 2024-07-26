@@ -125,6 +125,7 @@ int main(int argc, char** argv) {
     if (covariance.Compute(covariance_blocks, &problem)) {
         for (size_t epoch = 0; epoch < max_epoch; ++epoch) {
             double* position = state[epoch];
+            std::cout << std::fixed << std::setprecision(6);
             std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
             
             // std::vector<double> ecef_position = {position[0], position[1], position[2]};
