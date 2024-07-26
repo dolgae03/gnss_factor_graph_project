@@ -64,17 +64,18 @@ int main(int argc, char** argv) {
 
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
             double pr_value = pr_data[epoch][satellite];
+            double pr_value_station = pr_data_station[epoch][satellite];
 
-            if (std::isnan(pr_value)) continue;
+            if (std::isnan(pr_value) || std::isnan(pr_value_station)) continue;
             if (check_sv_data(sv_pos_data[epoch][satellite])) continue;
 
             std::cout << "pr_value: " << pr_value << std::endl;
 
-            factor::PesudorangeFactorCostFunctor* functor = 
-                new factor::PesudorangeFactorCostFunctor(sv_pos_data[epoch][satellite], pr_value);
+            factor::DiffPesudorangeFactorCostFunctor* functor = 
+                new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], pr_value-pr_value_station);
 
             ceres::CostFunction* cost_function =
-                new ceres::AutoDiffCostFunction<factor::PesudorangeFactorCostFunctor, 1, val_num>(functor);
+                new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, val_num>(functor);
 
             problem.AddResidualBlock(cost_function, nullptr, current_position);
         }
@@ -124,6 +125,7 @@ int main(int argc, char** argv) {
     if (covariance.Compute(covariance_blocks, &problem)) {
         for (size_t epoch = 0; epoch < max_epoch; ++epoch) {
             double* position = state[epoch];
+            std::cout << std::fixed << std::setprecision(6);
             std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
             
             // std::vector<double> ecef_position = {position[0], position[1], position[2]};

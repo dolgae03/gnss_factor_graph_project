@@ -45,6 +45,58 @@ class PesudorangeFactorCostFunctor {
         std::vector<double> sv_position_;
         double pesudorange_;
 };
+
+class DiffPesudorangeFactorCostFunctor {
+    public:
+        DiffPesudorangeFactorCostFunctor(const std::vector<double>& ref_position, const std::vector<double>& sv_position, double pesudorange)
+            : ref_position_(ref_position), sv_position_(sv_position), pesudorange_(pesudorange) {}
+
+        template <typename T>
+        bool operator()(const T* state, T* residual) const {
+            const double c = 299792458.0; // Speed of light in m/s
+
+            // State parameters
+            T rx = state[0];
+            T ry = state[1];
+            T rz = state[2];
+            T clock_bias = state[3] * T(c);
+
+            // Reference position
+            T ref_x = T(ref_position_[0]);
+            T ref_y = T(ref_position_[1]);
+            T ref_z = T(ref_position_[2]);
+
+            // Satellite position
+            T sx = T(sv_position_[0]);
+            T sy = T(sv_position_[1]);
+            T sz = T(sv_position_[2]);
+
+            // Range to receiver
+            T dx = rx - sx;
+            T dy = ry - sy;
+            T dz = rz - sz;
+            T range_to_receiver = ceres::sqrt(dx * dx + dy * dy + dz * dz) + clock_bias;
+
+            // Range to reference position
+            T dref_x = ref_x - sx;
+            T dref_y = ref_y - sy;
+            T dref_z = ref_z - sz;
+            T range_to_ref = ceres::sqrt(dref_x * dref_x + dref_y * dref_y + dref_z * dref_z);
+
+            // Differential pseudorange
+            T estimated_pr_diff = range_to_receiver - range_to_ref;
+
+            residual[0] = estimated_pr_diff - T(pesudorange_);
+
+            return true;
+        }
+
+    private:
+        std::vector<double> ref_position_;
+        std::vector<double> sv_position_;
+        double pesudorange_;
+};
+
 class DopplerFactorCostFunctor {
     public:
         DopplerFactorCostFunctor(const std::vector<double>& sv_velocity, double doppler, double time_interval)
