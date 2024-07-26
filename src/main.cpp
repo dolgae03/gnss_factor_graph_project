@@ -64,17 +64,18 @@ int main(int argc, char** argv) {
 
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
             double pr_value = pr_data[epoch][satellite];
+            double pr_value_station = pr_data_station[epoch][satellite];
 
-            if (std::isnan(pr_value)) continue;
+            if (std::isnan(pr_value) || std::isnan(pr_value_station)) continue;
             if (check_sv_data(sv_pos_data[epoch][satellite])) continue;
 
             std::cout << "pr_value: " << pr_value << std::endl;
 
-            factor::PesudorangeFactorCostFunctor* functor = 
-                new factor::PesudorangeFactorCostFunctor(sv_pos_data[epoch][satellite], pr_value);
+            factor::DiffPesudorangeFactorCostFunctor* functor = 
+                new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], pr_value-pr_value_station);
 
             ceres::CostFunction* cost_function =
-                new ceres::AutoDiffCostFunction<factor::PesudorangeFactorCostFunctor, 1, val_num>(functor);
+                new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, val_num>(functor);
 
             problem.AddResidualBlock(cost_function, nullptr, current_position);
         }
