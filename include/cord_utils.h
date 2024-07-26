@@ -9,7 +9,8 @@ namespace coordinate {
     const double WGS84_E = 8.1819190842622e-2; // 이심률 (eccentricity)
 
     // ECEF 좌표를 LLA 좌표로 변환하는 함수
-    std::vector<double> ecefToLLA(const std::vector<double> &ecef_position);
+    std::vector<double> ecef2lla(const std::vector<double> &ecef_position);
+    std::vector<double> lla2ecef(const std::vector<double> &lla);
 }
 
 #endif // CORD_UTILS_H

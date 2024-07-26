@@ -61,16 +61,20 @@ std::vector<std::vector<std::vector<double>>> readSVPosAndVelCSV(const std::stri
     std::string line;
 
     if (file.is_open()) {
-        std::getline(file, line);
+        std::getline(file, line);  // 헤더 라인 무시
 
         while (std::getline(file, line)) {
-            std::vector<std::vector<double>> epoch_data(32, std::vector<double>(3));
+            std::vector<std::vector<double>> epoch_data;
             std::stringstream lineStream(line);
             std::string cell;
             int satellite_index = 0;
 
             while (std::getline(lineStream, cell, ',')) {
-                epoch_data[satellite_index / 3][satellite_index % 3] = (cell == "NaN") ? std::numeric_limits<double>::quiet_NaN() : std::stod(cell);
+                if (satellite_index % 3 == 0) {
+                    // 새로운 위성 데이터를 시작합니다.
+                    epoch_data.push_back(std::vector<double>(3));
+                }
+                epoch_data.back()[satellite_index % 3] = (cell == "NaN") ? std::numeric_limits<double>::quiet_NaN() : std::stod(cell);
                 satellite_index++;
             }
             data.push_back(epoch_data);
