@@ -48,19 +48,22 @@ int main(int argc, char** argv) {
     std::vector<std::vector<std::vector<double>>> sv_vel_data = readSVPosAndVelCSV(rover_dir + sv_vel_file);
     std::vector<std::pair<int, double>> time_data = readGpsTimeCSV(rover_dir + time_file);
 
-    std::vector<std::vector<double>> pr_data_station = readPseudorangeCSV(rover_dir + pr_file);
-    std::vector<std::vector<double>> dop_data_station = readPseudorangeCSV(rover_dir + dop_file);
-    std::vector<std::vector<std::vector<double>>> sv_pos_data_station = readSVPosAndVelCSV(rover_dir + sv_pos_file);
-    std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(rover_dir + sv_vel_file);
-    std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(rover_dir + time_file);
+    std::vector<std::vector<double>> pr_data_station = readPseudorangeCSV(station_dir + pr_file);
+    std::vector<std::vector<double>> dop_data_station = readPseudorangeCSV(station_dir + dop_file);
+    std::vector<std::vector<std::vector<double>>> sv_pos_data_station = readSVPosAndVelCSV(station_dir + sv_pos_file);
+    std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
+    std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(station_dir + time_file);
 
     // log results
     std::ofstream fout_ecef(log_file_ecef);
     std::ofstream fout_llh(log_file_llh);
     std::ofstream fout_cov(log_file_cov);
 
-    fout_ecef << "Epoch, Position X, Position Y, Position Z, Clock Bias\n";
+    fout_ecef << "Epoch, Position X(m), Position Y(m), Position Z(m), Clk Bias(s)-GPS\n";
     fout_llh << "Epoch, Latitude, Longitude, Altitude\n";
+    fout_ecef  << std::fixed << std::setprecision(10);
+    fout_llh  << std::fixed << std::setprecision(10);
+    fout_cov  << std::fixed << std::setprecision(10);
 
     std::vector<double * > state;
     ceres::Problem problem;
@@ -68,9 +71,12 @@ int main(int argc, char** argv) {
     std::vector<double> ref_location = coordinate::lla2ecef({36.372371713580250, 127.358800510185191, 91.642377777777796});
 
     const size_t val_num = 4;
-    const size_t max_epoch = 10; //time_data.size();
+    const size_t start_epoch = 500;
+    const size_t max_epoch = 800; //time_data.size();
+    // const size_t max_epoch = time_data.size();
 
-    for(size_t epoch=0; epoch < max_epoch; ++epoch){
+
+    for(size_t epoch=start_epoch; epoch < max_epoch; ++epoch){
         double* current_position = new double[val_num];
         std::fill(current_position, current_position + val_num, 0.0); 
 
@@ -112,7 +118,7 @@ int main(int argc, char** argv) {
                 ceres::CostFunction* cost_function = 
                     new ceres::AutoDiffCostFunction<factor::DopplerFactorCostFunctor, 1, val_num, val_num>(functor);
 
-                problem.AddResidualBlock(cost_function, nullptr, state[epoch-1], current_position);
+                // problem.AddResidualBlock(cost_function, nullptr, state[epoch-1], current_position);
             }
             std::cout << epoch << endl;
         }
@@ -122,6 +128,7 @@ int main(int argc, char** argv) {
     // Solver 옵션 설정 및 실행
     ceres::Solver::Options options;
     options.minimizer_progress_to_stdout = true;
+    // options.parameter_tolerance = 1e-11;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 
@@ -139,6 +146,7 @@ int main(int argc, char** argv) {
             double* position = state[epoch];
             std::cout << std::fixed << std::setprecision(6);
             std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
+            // fout_ecef  << std::fixed << std::setprecision(6);
             fout_ecef << epoch << ", " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
             
             // std::vector<double> ecef_position = {position[0], position[1], position[2]};
@@ -147,6 +155,7 @@ int main(int argc, char** argv) {
             std::vector<double> res = coordinate::ecef2lla(ecef_position);
 
             std::cout << "Epoch(LLA) " << epoch << ": " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
+            // fout_llh  << std::fixed << std::setprecision(6);
             fout_llh << epoch << ", " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
 
             // 공분산 출력
@@ -156,6 +165,7 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 3; ++i) {
                 for (int j = 0; j < 3; ++j) {
                     std::cout << covariance_matrix[3 * i + j] << " ";
+                    // fout_cov << std::fixed << std::setprecision(6);
                     fout_cov << covariance_matrix[3 * i + j] << ", ";
                 }
                 std::cout << "\n";

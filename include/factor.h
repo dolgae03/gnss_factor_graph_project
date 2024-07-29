@@ -124,7 +124,8 @@ class DopplerFactorCostFunctor {
             // Convert Doppler shift to velocity
             T doppler_velocity = T(doppler_) * T(c) / T(L1_frequency);
 
-            residual[0] = relative_speed - doppler_velocity;
+            double weight_doppler = 1000;    
+            residual[0] = weight_doppler*(relative_speed - doppler_velocity);
 
             return true;
         }
