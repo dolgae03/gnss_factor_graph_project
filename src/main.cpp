@@ -5,6 +5,7 @@
 
 using namespace std;
 
+#include <iomanip>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -31,6 +32,9 @@ bool check_sv_data(T vector){
 int main(int argc, char** argv) {
     std::string rover_dir = "../data/data_rover/";
     std::string station_dir = "../data/data_station/";
+    std::string log_file_ecef = "../result/pos_ecef.csv";
+    std::string log_file_llh = "../result/pos_llh.csv";
+    std::string log_file_cov = "../result/error_cov.csv";
     std::string pr_file = "pr.csv";
     std::string dop_file = "dop.csv";
     std::string sv_pos_file = "sv_pos.csv";
@@ -49,6 +53,14 @@ int main(int argc, char** argv) {
     std::vector<std::vector<std::vector<double>>> sv_pos_data_station = readSVPosAndVelCSV(rover_dir + sv_pos_file);
     std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(rover_dir + sv_vel_file);
     std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(rover_dir + time_file);
+
+    // log results
+    std::ofstream fout_ecef(log_file_ecef);
+    std::ofstream fout_llh(log_file_llh);
+    std::ofstream fout_cov(log_file_cov);
+
+    fout_ecef << "Epoch, Position X, Position Y, Position Z, Clock Bias\n";
+    fout_llh << "Epoch, Latitude, Longitude, Altitude\n";
 
     std::vector<double * > state;
     ceres::Problem problem;
@@ -127,6 +139,7 @@ int main(int argc, char** argv) {
             double* position = state[epoch];
             std::cout << std::fixed << std::setprecision(6);
             std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
+            fout_ecef << epoch << ", " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
             
             // std::vector<double> ecef_position = {position[0], position[1], position[2]};
 
@@ -134,6 +147,7 @@ int main(int argc, char** argv) {
             std::vector<double> res = coordinate::ecef2lla(ecef_position);
 
             std::cout << "Epoch(LLA) " << epoch << ": " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
+            fout_llh << epoch << ", " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
 
             // 공분산 출력
             double covariance_matrix[3 * 3];
@@ -142,8 +156,10 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 3; ++i) {
                 for (int j = 0; j < 3; ++j) {
                     std::cout << covariance_matrix[3 * i + j] << " ";
+                    fout_cov << covariance_matrix[3 * i + j] << ", ";
                 }
                 std::cout << "\n";
+                fout_cov << "\n";
             }
 
             delete[] position; // 메모리 해제
@@ -152,6 +168,9 @@ int main(int argc, char** argv) {
         std::cerr << "Failed to compute covariance." << std::endl;
     }
 
+    fout_ecef.close();
+    fout_llh.close();
+    fout_cov.close();
 
     return 0;
 }
