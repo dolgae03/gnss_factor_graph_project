@@ -42,6 +42,7 @@ class PesudorangeFactorCostFunctor {
         double sigma_;
 };
 
+
 class DiffPesudorangeFactorCostFunctor {
     public:
         DiffPesudorangeFactorCostFunctor(const std::vector<double>& ref_position, const std::vector<double>& sv_position, double pesudorange, double sigma)
@@ -50,6 +51,7 @@ class DiffPesudorangeFactorCostFunctor {
         template <typename T>
         bool operator()(const T* state, T* residual) const {
             const double c = 299792458.0; // Speed of light in m/s
+            const double omega = 7.2921151467e-5; // Earth's rotation rate in rad/s
 
             // State parameters
             T rx = state[0];
@@ -67,22 +69,38 @@ class DiffPesudorangeFactorCostFunctor {
             T sy = T(sv_position_[1]);
             T sz = T(sv_position_[2]);
 
-            // Range to receiver
-            T dx = rx - sx;
-            T dy = ry - sy;
-            T dz = rz - sz;
-            T range_to_receiver = ceres::sqrt(dx * dx + dy * dy + dz * dz) + clock_bias;
+            // Approximate range to reference position
+            T approx_r0_x = sx - ref_x;
+            T approx_r0_y = sy - ref_y;
+            T approx_r0_z = sz - ref_z;
+            T approx_range0 = ceres::sqrt(approx_r0_x * approx_r0_x + approx_r0_y * approx_r0_y + approx_r0_z * approx_r0_z);
 
-            // Range to reference position
-            T dref_x = ref_x - sx;
-            T dref_y = ref_y - sy;
-            T dref_z = ref_z - sz;
+            // Rotation matrix C
+            T C[3][3] = {
+                {T(1), T(omega) * approx_range0 / T(c), T(0)},
+                {T(-omega) * approx_range0 / T(c), T(1), T(0)},
+                {T(0), T(0), T(1)}
+            };
+
+            // Rotate satellite position
+            T r_sx = C[0][0] * sx + C[0][1] * sy + C[0][2] * sz;
+            T r_sy = C[1][0] * sx + C[1][1] * sy + C[1][2] * sz;
+            T r_sz = C[2][0] * sx + C[2][1] * sy + C[2][2] * sz;
+
+            T dx = rx - r_sx;
+            T dy = ry - r_sy;
+            T dz = rz - r_sz;
+            T range_to_sv = ceres::sqrt(dx * dx + dy * dy + dz * dz) + clock_bias;
+
+            T dref_x = ref_x - r_sx;
+            T dref_y = ref_y - r_sy;
+            T dref_z = ref_z - r_sz;
             T range_to_ref = ceres::sqrt(dref_x * dref_x + dref_y * dref_y + dref_z * dref_z);
 
             // Differential pseudorange
-            T estimated_pr_diff = range_to_receiver - range_to_ref;
+            T estimated_pr_diff = range_to_sv - range_to_ref;
 
-            residual[0] = (estimated_pr_diff - T(pesudorange_)) / T(sigma_);
+            residual[0] = (T(pesudorange_) - estimated_pr_diff) / T(sigma_);
 
             return true;
         }

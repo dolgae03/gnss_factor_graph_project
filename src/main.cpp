@@ -68,22 +68,27 @@ int main(int argc, char** argv) {
     std::vector<double * > state;
     ceres::Problem problem;
 
-    std::vector<double> ref_location = coordinate::lla2ecef({36.372371713580250, 127.358800510185191, 91.642377777777796});
+    // std::vector<double> ref_location = coordinate::lla2ecef({36.372371713580250, 127.358800510185191, 91.642377777777796});
+    std::vector<double> ref_location = {-3.119992580788137e+06, 4.086868171897103e+06, 3.761594895585738e+06};
 
-    const size_t val_num = 4;
-    const size_t start_epoch = 500;
-    const size_t max_epoch = 600; 
+    const size_t val_num = 4; // x, y ,z, t_gps, t_glo,
+    const size_t start_epoch = 0;
+    const size_t T = 1000;
+    const size_t max_epoch = start_epoch + T; 
 
     double* previous_position = nullptr;
     double* current_position = nullptr;
 
-    for(size_t epoch=start_epoch; epoch < max_epoch; ++epoch){
+    for(size_t epoch=start_epoch; epoch <= max_epoch; ++epoch){
         previous_position = current_position;
         current_position = new double[val_num];
         std::fill(current_position, current_position + val_num, 0.0); 
 
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
             int satellite_type;
+            if (satellite == 140 - 1)
+                continue;
+
             if (satellite < 32) // GPS
                 satellite_type = 1;
             else if(satellite_type < 59) //GLO
@@ -95,15 +100,13 @@ int main(int argc, char** argv) {
             else
                 assert(false);
 
-            if (satellite_type == 2)
-                continue;
-
             double pr_value = pr_data[epoch][satellite];
             double pr_value_station = pr_data_station[epoch][satellite];
+            double next_dop_value = dop_data[epoch][satellite];
 
-            if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !check_sv_data(sv_pos_data[epoch][satellite])){
+            if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
                 factor::DiffPesudorangeFactorCostFunctor* functor = 
-                    new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], pr_value-pr_value_station, 0.5);
+                    new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], pr_value-pr_value_station, 1.0);
 
                 ceres::CostFunction* cost_function =
                     new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, val_num>(functor);
@@ -113,7 +116,7 @@ int main(int argc, char** argv) {
 
             if(epoch > start_epoch){
                 double prev_dop_value = dop_data[epoch-1][satellite]; // Hz
-                double next_dop_value = dop_data[epoch][satellite];
+
                 if (!std::isnan(prev_dop_value) && 
                     !std::isnan(next_dop_value) &&
                     !check_sv_data(sv_vel_data[epoch][satellite]) && 
@@ -136,7 +139,7 @@ int main(int argc, char** argv) {
                     ceres::CostFunction* cost_function = 
                         new ceres::AutoDiffCostFunction<factor::DopplerFactorCostFunctor, 1, val_num, val_num>(functor);
 
-                    problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                    // problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
                 }
             }
         }
@@ -146,7 +149,12 @@ int main(int argc, char** argv) {
     // Solver 옵션 설정 및 실행
     ceres::Solver::Options options;
     options.minimizer_progress_to_stdout = true;
-    // options.parameter_tolerance = 1e-11;
+    options.parameter_tolerance = 1e-12; // 더 엄격한 파라미터 수렴 조건
+    options.function_tolerance = 1e-12;  // 더 엄격한 함수 값 수렴 조건
+    options.gradient_tolerance = 1e-12;  // 더 엄격한 그라디언트 수렴 조건
+    options.max_num_iterations = 1000;   // 최대 반복 횟수 설정
+
+    options.minimizer_progress_to_stdout = true;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 
@@ -159,7 +167,7 @@ int main(int argc, char** argv) {
     }
 
     if (covariance.Compute(covariance_blocks, &problem)) {
-        for (size_t epoch = epoch; epoch < state.size(); ++epoch) {
+        for (size_t epoch = 0; epoch < state.size(); ++epoch) {
             double* position = state[epoch];
             std::cout << std::fixed << std::setprecision(6);
             std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
