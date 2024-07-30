@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
     // std::vector<double> ref_location = coordinate::lla2ecef({36.372371713580250, 127.358800510185191, 91.642377777777796});
     std::vector<double> ref_location = {-3.119992580788137e+06, 4.086868171897103e+06, 3.761594895585738e+06};
 
-    const size_t val_num = 4; // x, y ,z, t_gps, t_glo,
+    const size_t val_num = 6; // x, y ,z, t_gps, t_glo,
     const size_t start_epoch = 0;
     const size_t T = 1000;
     const size_t max_epoch = start_epoch + T; 
@@ -90,15 +90,18 @@ int main(int argc, char** argv) {
                 continue;
 
             if (satellite < 32) // GPS
-                satellite_type = 1;
+                satellite_type = 0;
             else if(satellite_type < 59) //GLO
-                satellite_type = 2;
-            else if (satellite_type < 95) // GAL
-                satellite_type = 3;
-            else if (satellite_type < 158) // BDS
                 satellite_type = 4;
+            else if (satellite_type < 95) // GAL
+                satellite_type = 1;
+            else if (satellite_type < 158) // BDS
+                satellite_type = 2;
             else
                 assert(false);
+
+            if (satellite_type > 3)
+                continue;
 
             double pr_value = pr_data[epoch][satellite];
             double pr_value_station = pr_data_station[epoch][satellite];
@@ -106,7 +109,7 @@ int main(int argc, char** argv) {
 
             if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
                 factor::DiffPesudorangeFactorCostFunctor* functor = 
-                    new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], pr_value-pr_value_station, 1.0);
+                    new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], pr_value-pr_value_station, satellite_type, 0.5);
 
                 ceres::CostFunction* cost_function =
                     new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, val_num>(functor);
@@ -134,12 +137,12 @@ int main(int argc, char** argv) {
                         sv_avg_pos_data.push_back((sv_pos_data[epoch][satellite][i] + sv_pos_data[epoch-1][satellite][i])/2);
 
                     factor::DopplerFactorCostFunctor* functor = 
-                        new factor::DopplerFactorCostFunctor(sv_avg_pos_data, sv_avg_vel_data, mean_dop_value, time_interval, satellite_type, 1e-03);
+                        new factor::DopplerFactorCostFunctor(sv_avg_pos_data, sv_avg_vel_data, mean_dop_value, time_interval, satellite_type, 1.0);
 
                     ceres::CostFunction* cost_function = 
                         new ceres::AutoDiffCostFunction<factor::DopplerFactorCostFunctor, 1, val_num, val_num>(functor);
 
-                    // problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                    problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
                 }
             }
         }
@@ -159,6 +162,7 @@ int main(int argc, char** argv) {
     ceres::Solve(options, &problem, &summary);
 
     ceres::Covariance::Options cov_options;
+    // cov_options.algorithm_type = ceres::DENSE_SVD;
     ceres::Covariance covariance(cov_options);
 
     std::vector<std::pair<const double*, const double*>> covariance_blocks;
@@ -166,39 +170,35 @@ int main(int argc, char** argv) {
         covariance_blocks.emplace_back(position, position);
     }
 
-    if (covariance.Compute(covariance_blocks, &problem)) {
-        for (size_t epoch = 0; epoch < state.size(); ++epoch) {
-            double* position = state[epoch];
-            std::cout << std::fixed << std::setprecision(6);
-            std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
-            // fout_ecef  << std::fixed << std::setprecision(6);
-            fout_ecef << epoch << ", " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
+    bool covariance_result = covariance.Compute(covariance_blocks, &problem);
 
-            std::vector<double> ecef_position = {position[0], position[1], position[2]};
-            std::vector<double> res = coordinate::ecef2lla(ecef_position);
+    for (size_t epoch = 0; epoch < state.size(); ++epoch) {
+        double* position = state[epoch];
+        std::cout << std::fixed << std::setprecision(6);
+        std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
+        fout_ecef << epoch << ", " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
 
-            std::cout << "Epoch(LLA) " << epoch << ": " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
-            // fout_llh  << std::fixed << std::setprecision(6);
-            fout_llh << epoch << ", " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
+        std::vector<double> ecef_position = {position[0], position[1], position[2]};
+        std::vector<double> res = coordinate::ecef2lla(ecef_position);
 
-            // 공분산 출력
+        std::cout << "Epoch(LLA) " << epoch << ": " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
+        fout_llh << epoch << ", " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
+
+        if (covariance_result){
             double covariance_matrix[3 * 3];
             covariance.GetCovarianceBlock(position, position, covariance_matrix);
             std::cout << "Covariance Matrix:\n";
             for (int i = 0; i < 3; ++i) {
                 for (int j = 0; j < 3; ++j) {
                     std::cout << covariance_matrix[3 * i + j] << " ";
-                    // fout_cov << std::fixed << std::setprecision(6);
                     fout_cov << covariance_matrix[3 * i + j] << ", ";
                 }
                 std::cout << "\n";
                 fout_cov << "\n";
             }
+        }    
 
-            delete[] position; // 메모리 해제
-        }
-    } else {
-        std::cout << "Failed to compute covariance." << std::endl;
+        delete[] position; // 메모리 해제
     }
 
     std::cout << summary.FullReport() << "\n";

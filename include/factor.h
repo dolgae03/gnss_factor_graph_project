@@ -16,37 +16,37 @@ using namespace std;
 
 namespace factor {
 
-class PesudorangeFactorCostFunctor {
-    public:
-        PesudorangeFactorCostFunctor(const std::vector<double>& sv_position, double pesudorange, double sigma)
-            : sv_position_(sv_position), pesudorange_(pesudorange), sigma_(sigma) {}
+// class PesudorangeFactorCostFunctor {
+//     public:
+//         PesudorangeFactorCostFunctor(const std::vector<double>& sv_position, double pesudorange, double sigma)
+//             : sv_position_(sv_position), pesudorange_(pesudorange), sigma_(sigma) {}
 
-        template <typename T>
-        bool operator()(const T* state, T* residual) const {
-            const double c = 299792458.0; // Speed of light in m/s
-            T dx = state[0] - T(sv_position_[0]);
-            T dy = state[1] - T(sv_position_[1]);
-            T dz = state[2] - T(sv_position_[2]);
-            T clock_bias = state[3] * T(c);
+//         template <typename T>
+//         bool operator()(const T* state, T* residual) const {
+//             const double c = 299792458.0; // Speed of light in m/s
+//             T dx = state[0] - T(sv_position_[0]);
+//             T dy = state[1] - T(sv_position_[1]);
+//             T dz = state[2] - T(sv_position_[2]);
+//             T clock_bias = state[3] * T(c);
 
-            T estimated_pr = ceres::sqrt(dx * dx + dy * dy + dz * dz) + clock_bias;
+//             T estimated_pr = ceres::sqrt(dx * dx + dy * dy + dz * dz) + clock_bias;
 
-            residual[0] = (estimated_pr - T(pesudorange_)) / sigma_;
+//             residual[0] = (estimated_pr - T(pesudorange_)) / sigma_;
 
-            return true;
-        }
+//             return true;
+//         }
 
-    private:
-        std::vector<double> sv_position_;
-        double pesudorange_;
-        double sigma_;
-};
+//     private:
+//         std::vector<double> sv_position_;
+//         double pesudorange_;
+//         double sigma_;
+// };
 
 
 class DiffPesudorangeFactorCostFunctor {
     public:
-        DiffPesudorangeFactorCostFunctor(const std::vector<double>& ref_position, const std::vector<double>& sv_position, double pesudorange, double sigma)
-            : ref_position_(ref_position), sv_position_(sv_position), pesudorange_(pesudorange), sigma_(sigma) {}
+        DiffPesudorangeFactorCostFunctor(const std::vector<double>& ref_position, const std::vector<double>& sv_position, double pesudorange, int satellite_type, double sigma)
+            : ref_position_(ref_position), sv_position_(sv_position), pesudorange_(pesudorange), satellite_type_(satellite_type), sigma_(sigma) {}
 
         template <typename T>
         bool operator()(const T* state, T* residual) const {
@@ -57,7 +57,7 @@ class DiffPesudorangeFactorCostFunctor {
             T rx = state[0];
             T ry = state[1];
             T rz = state[2];
-            T clock_bias = state[3] * T(c);
+            T clock_bias = state[3 + satellite_type_] * T(c);
 
             // Reference position
             T ref_x = T(ref_position_[0]);
@@ -110,6 +110,7 @@ class DiffPesudorangeFactorCostFunctor {
         std::vector<double> sv_position_;
         double pesudorange_;
         double sigma_;
+        int satellite_type_;
 };
 
 class DopplerFactorCostFunctor {
@@ -124,22 +125,14 @@ class DopplerFactorCostFunctor {
             
             // Define frequencies for each satellite type
             switch (satellite_type_) {
-                case 1:  // GPS L1C
+                case 0:  // GPS L1C
                     L1_frequency = T(1575.42e6);
                     break;
-                case 2:  // GLONASS L1C
-                    // Assuming k value is provided, k = -7,…+12
-                    // This example uses k = 0 for simplicity
-                    L1_frequency = T(1602.0e6);
-                    break;
-                case 3:  // GALILEO L1C
+                case 1:  // GALILEO L1C
                     L1_frequency = T(1575.42e6);
                     break;
-                case 4:  // QZSS L1C
-                    L1_frequency = T(1575.42e6);
-                    break;
-                case 5:  // Beidou B2
-                    L1_frequency = T(1207.14e6);
+                case 2:  // Beidou B2
+                    L1_frequency = T(1561.098e6);
                     break;
                 default:
                     // Default to GPS L1C if an unknown satellite type is provided
@@ -164,7 +157,7 @@ class DopplerFactorCostFunctor {
 
             T user_velocity[3];
             for (int i = 0; i < 3; ++i) 
-                user_velocity[i] = (next_state[i] - prev_state[i]) / (T(time_interval_) + next_state[3] - prev_state[3]);
+                user_velocity[i] = (next_state[i] - prev_state[i]) / (T(time_interval_) + next_state[3 + satellite_type_] - prev_state[3 + satellite_type_]);
         
             T relative_velocity[3];
             for (int i = 0; i < 3; ++i) 
