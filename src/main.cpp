@@ -72,8 +72,7 @@ int main(int argc, char** argv) {
 
     const size_t val_num = 4;
     const size_t start_epoch = 500;
-    const size_t max_epoch = 600; //time_data.size();
-    // const size_t max_epoch = time_data.size();
+    const size_t max_epoch = 600; 
 
     double* previous_position = nullptr;
     double* current_position = nullptr;
@@ -103,8 +102,6 @@ int main(int argc, char** argv) {
             double pr_value_station = pr_data_station[epoch][satellite];
 
             if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !check_sv_data(sv_pos_data[epoch][satellite])){
-                std::cout << "pr_value: " << pr_value << std::endl;
-
                 factor::DiffPesudorangeFactorCostFunctor* functor = 
                     new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], pr_value-pr_value_station, 0.5);
 
@@ -114,10 +111,7 @@ int main(int argc, char** argv) {
                 problem.AddResidualBlock(cost_function, nullptr, current_position);
             }
 
-            cout<< epoch << " " << start_epoch<< endl;
-
             if(epoch > start_epoch){
-                std::cout << previous_position << ' '<< current_position << endl;
                 double prev_dop_value = dop_data[epoch-1][satellite]; // Hz
                 double next_dop_value = dop_data[epoch][satellite];
                 if (!std::isnan(prev_dop_value) && 
@@ -143,7 +137,6 @@ int main(int argc, char** argv) {
                         new ceres::AutoDiffCostFunction<factor::DopplerFactorCostFunctor, 1, val_num, val_num>(functor);
 
                     problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
-                    std::cout << epoch << endl;
                 }
             }
         }
@@ -157,7 +150,6 @@ int main(int argc, char** argv) {
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 
-    std::cout << summary.FullReport() << "\n";
     ceres::Covariance::Options cov_options;
     ceres::Covariance covariance(cov_options);
 
@@ -173,8 +165,6 @@ int main(int argc, char** argv) {
             std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
             // fout_ecef  << std::fixed << std::setprecision(6);
             fout_ecef << epoch << ", " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
-            
-            // std::vector<double> ecef_position = {position[0], position[1], position[2]};
 
             std::vector<double> ecef_position = {position[0], position[1], position[2]};
             std::vector<double> res = coordinate::ecef2lla(ecef_position);
@@ -200,8 +190,10 @@ int main(int argc, char** argv) {
             delete[] position; // 메모리 해제
         }
     } else {
-        std::cerr << "Failed to compute covariance." << std::endl;
+        std::cout << "Failed to compute covariance." << std::endl;
     }
+
+    std::cout << summary.FullReport() << "\n";
 
     fout_ecef.close();
     fout_llh.close();
