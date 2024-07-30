@@ -18,17 +18,12 @@ namespace factor {
 
 class PesudorangeFactorCostFunctor {
     public:
-        PesudorangeFactorCostFunctor(const std::vector<double>& sv_position, double pesudorange)
-            : sv_position_(sv_position), pesudorange_(pesudorange) {}
+        PesudorangeFactorCostFunctor(const std::vector<double>& sv_position, double pesudorange, double sigma)
+            : sv_position_(sv_position), pesudorange_(pesudorange), sigma_(sigma) {}
 
         template <typename T>
         bool operator()(const T* state, T* residual) const {
-            const double c = 299792458.0;
-            // state[0]: receiver x
-            // state[1]: receiver y
-            // state[2]: receiver z
-            // state[3]: receiver clock bias
-
+            const double c = 299792458.0; // Speed of light in m/s
             T dx = state[0] - T(sv_position_[0]);
             T dy = state[1] - T(sv_position_[1]);
             T dz = state[2] - T(sv_position_[2]);
@@ -36,7 +31,7 @@ class PesudorangeFactorCostFunctor {
 
             T estimated_pr = ceres::sqrt(dx * dx + dy * dy + dz * dz) + clock_bias;
 
-            residual[0] = estimated_pr - T(pesudorange_);
+            residual[0] = (estimated_pr - T(pesudorange_)) / sigma_;
 
             return true;
         }
@@ -44,12 +39,13 @@ class PesudorangeFactorCostFunctor {
     private:
         std::vector<double> sv_position_;
         double pesudorange_;
+        double sigma_;
 };
 
 class DiffPesudorangeFactorCostFunctor {
     public:
-        DiffPesudorangeFactorCostFunctor(const std::vector<double>& ref_position, const std::vector<double>& sv_position, double pesudorange)
-            : ref_position_(ref_position), sv_position_(sv_position), pesudorange_(pesudorange) {}
+        DiffPesudorangeFactorCostFunctor(const std::vector<double>& ref_position, const std::vector<double>& sv_position, double pesudorange, double sigma)
+            : ref_position_(ref_position), sv_position_(sv_position), pesudorange_(pesudorange), sigma_(sigma) {}
 
         template <typename T>
         bool operator()(const T* state, T* residual) const {
@@ -86,7 +82,7 @@ class DiffPesudorangeFactorCostFunctor {
             // Differential pseudorange
             T estimated_pr_diff = range_to_receiver - range_to_ref;
 
-            residual[0] = estimated_pr_diff - T(pesudorange_);
+            residual[0] = (estimated_pr_diff - T(pesudorange_)) / T(sigma_);
 
             return true;
         }
@@ -95,45 +91,87 @@ class DiffPesudorangeFactorCostFunctor {
         std::vector<double> ref_position_;
         std::vector<double> sv_position_;
         double pesudorange_;
+        double sigma_;
 };
 
 class DopplerFactorCostFunctor {
     public:
-        DopplerFactorCostFunctor(const std::vector<double>& sv_velocity, double doppler, double time_interval)
-            : sv_velocity_(sv_velocity), doppler_(doppler), time_interval_(time_interval) {}
+        DopplerFactorCostFunctor(const std::vector<double>& sv_position, const std::vector<double>& sv_velocity, double doppler, double time_interval, int satellite_type, double sigma)
+            : sv_position_(sv_position), sv_velocity_(sv_velocity), doppler_(doppler), time_interval_(time_interval), satellite_type_(satellite_type), sigma_(sigma) {}
 
         template <typename T>
         bool operator()(const T* const prev_state, const T* const next_state, T* residual) const {
             const double c = 299792458.0;  // speed of light in m/s
-            const double L1_frequency = 1575.42e6;  // L1 signal frequency in Hz
+            T L1_frequency;  // L1 signal frequency in Hz
+            
+            // Define frequencies for each satellite type
+            switch (satellite_type_) {
+                case 1:  // GPS L1C
+                    L1_frequency = T(1575.42e6);
+                    break;
+                case 2:  // GLONASS L1C
+                    // Assuming k value is provided, k = -7,…+12
+                    // This example uses k = 0 for simplicity
+                    L1_frequency = T(1602.0e6);
+                    break;
+                case 3:  // GALILEO L1C
+                    L1_frequency = T(1575.42e6);
+                    break;
+                case 4:  // QZSS L1C
+                    L1_frequency = T(1575.42e6);
+                    break;
+                case 5:  // Beidou B2
+                    L1_frequency = T(1207.14e6);
+                    break;
+                default:
+                    // Default to GPS L1C if an unknown satellite type is provided
+                    L1_frequency = T(1575.42e6);
+                    break;
+            }
+
+            // Calculate the LOS vector from the user's position to the satellite's position
+            T los_vector[3];
+            T user_position[3];
+            for (int i = 0; i < 3; ++i) {
+                user_position[i] = (prev_state[i] + next_state[i]) / T(2.0);
+                los_vector[i] = T(sv_position_[i]) - user_position[i];
+            }
+
+            T los_norm = ceres::sqrt(los_vector[0] * los_vector[0] +
+                                    los_vector[1] * los_vector[1] +
+                                    los_vector[2] * los_vector[2]);
+
+            for (int i = 0; i < 3; ++i) 
+                los_vector[i] /= los_norm;  // Normalize LOS vector
 
             T user_velocity[3];
-            for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i < 3; ++i) 
                 user_velocity[i] = (next_state[i] - prev_state[i]) / (T(time_interval_) + next_state[3] - prev_state[3]);
-            }
-
+        
             T relative_velocity[3];
-            for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i < 3; ++i) 
                 relative_velocity[i] = user_velocity[i] - T(sv_velocity_[i]);
-            }
 
-            T relative_speed = ceres::sqrt(relative_velocity[0] * relative_velocity[0] +
-                                        relative_velocity[1] * relative_velocity[1] +
-                                        relative_velocity[2] * relative_velocity[2]);
+            // Project relative velocity onto the LOS vector to get the relative speed
+            T relative_speed = relative_velocity[0] * los_vector[0] +
+                            relative_velocity[1] * los_vector[1] +
+                            relative_velocity[2] * los_vector[2];
 
             // Convert Doppler shift to velocity
-            T doppler_velocity = T(doppler_) * T(c) / T(L1_frequency);
-
-            double weight_doppler = 1000;    
-            residual[0] = weight_doppler*(relative_speed - doppler_velocity);
+            T doppler_velocity = T(doppler_) * T(c) / L1_frequency;
+    
+            residual[0] = (relative_speed - doppler_velocity) / T(sigma_);
 
             return true;
         }
 
     private:
+        std::vector<double> sv_position_;
         std::vector<double> sv_velocity_;
         double doppler_;
         double time_interval_;
+        int satellite_type_;
+        double sigma_;
 };
 
 };

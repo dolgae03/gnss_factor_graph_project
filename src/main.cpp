@@ -72,55 +72,80 @@ int main(int argc, char** argv) {
 
     const size_t val_num = 4;
     const size_t start_epoch = 500;
-    const size_t max_epoch = 800; //time_data.size();
+    const size_t max_epoch = 600; //time_data.size();
     // const size_t max_epoch = time_data.size();
 
+    double* previous_position = nullptr;
+    double* current_position = nullptr;
 
     for(size_t epoch=start_epoch; epoch < max_epoch; ++epoch){
-        double* current_position = new double[val_num];
+        previous_position = current_position;
+        current_position = new double[val_num];
         std::fill(current_position, current_position + val_num, 0.0); 
 
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
+            int satellite_type;
+            if (satellite < 32) // GPS
+                satellite_type = 1;
+            else if(satellite_type < 59) //GLO
+                satellite_type = 2;
+            else if (satellite_type < 95) // GAL
+                satellite_type = 3;
+            else if (satellite_type < 158) // BDS
+                satellite_type = 4;
+            else
+                assert(false);
+
+            if (satellite_type == 2)
+                continue;
+
             double pr_value = pr_data[epoch][satellite];
             double pr_value_station = pr_data_station[epoch][satellite];
 
-            if (std::isnan(pr_value) || std::isnan(pr_value_station)) continue;
-            if (check_sv_data(sv_pos_data[epoch][satellite])) continue;
+            if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !check_sv_data(sv_pos_data[epoch][satellite])){
+                std::cout << "pr_value: " << pr_value << std::endl;
 
-            std::cout << "pr_value: " << pr_value << std::endl;
+                factor::DiffPesudorangeFactorCostFunctor* functor = 
+                    new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], pr_value-pr_value_station, 0.5);
 
-            factor::DiffPesudorangeFactorCostFunctor* functor = 
-                new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], pr_value-pr_value_station);
+                ceres::CostFunction* cost_function =
+                    new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, val_num>(functor);
 
-            ceres::CostFunction* cost_function =
-                new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, val_num>(functor);
+                problem.AddResidualBlock(cost_function, nullptr, current_position);
+            }
 
-            problem.AddResidualBlock(cost_function, nullptr, current_position);
-        }
+            cout<< epoch << " " << start_epoch<< endl;
 
-        if(epoch < 0){
-            for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
+            if(epoch > start_epoch){
+                std::cout << previous_position << ' '<< current_position << endl;
                 double prev_dop_value = dop_data[epoch-1][satellite]; // Hz
                 double next_dop_value = dop_data[epoch][satellite];
-                if (std::isnan(prev_dop_value) || std::isnan(next_dop_value)) continue;
-                if (check_sv_data(sv_vel_data[epoch][satellite]) || check_sv_data(sv_vel_data[epoch-1][satellite])) continue;
+                if (!std::isnan(prev_dop_value) && 
+                    !std::isnan(next_dop_value) &&
+                    !check_sv_data(sv_vel_data[epoch][satellite]) && 
+                    !check_sv_data(sv_vel_data[epoch-1][satellite])){
 
-                double mean_dop_value = (prev_dop_value + next_dop_value) / 2;
-                double time_interval = time_data[epoch].second - time_data[epoch-1].second;
+                    double mean_dop_value = (prev_dop_value + next_dop_value) / 2;
+                    double time_interval = time_data[epoch].second - time_data[epoch-1].second;
 
-                std::vector<double> sv_avg_vel_data;
-                for(int i=0; i<3; i++)
-                    sv_avg_vel_data.push_back((sv_vel_data[epoch][satellite][i] + sv_vel_data[epoch-1][satellite][i])/2);
+                    std::vector<double> sv_avg_vel_data;
+                    for(int i=0; i<3; i++)
+                        sv_avg_vel_data.push_back((sv_vel_data[epoch][satellite][i] + sv_vel_data[epoch-1][satellite][i])/2);
 
-                factor::DopplerFactorCostFunctor* functor = 
-                    new factor::DopplerFactorCostFunctor(sv_avg_vel_data, mean_dop_value, time_interval);
+                    std::vector<double> sv_avg_pos_data;
+                    for(int i=0; i<3; i++)
+                        sv_avg_pos_data.push_back((sv_pos_data[epoch][satellite][i] + sv_pos_data[epoch-1][satellite][i])/2);
 
-                ceres::CostFunction* cost_function = 
-                    new ceres::AutoDiffCostFunction<factor::DopplerFactorCostFunctor, 1, val_num, val_num>(functor);
+                    factor::DopplerFactorCostFunctor* functor = 
+                        new factor::DopplerFactorCostFunctor(sv_avg_pos_data, sv_avg_vel_data, mean_dop_value, time_interval, satellite_type, 1e-03);
 
-                // problem.AddResidualBlock(cost_function, nullptr, state[epoch-1], current_position);
+                    ceres::CostFunction* cost_function = 
+                        new ceres::AutoDiffCostFunction<factor::DopplerFactorCostFunctor, 1, val_num, val_num>(functor);
+
+                    problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                    std::cout << epoch << endl;
+                }
             }
-            std::cout << epoch << endl;
         }
 
         state.push_back(current_position);
@@ -142,7 +167,7 @@ int main(int argc, char** argv) {
     }
 
     if (covariance.Compute(covariance_blocks, &problem)) {
-        for (size_t epoch = 0; epoch < max_epoch; ++epoch) {
+        for (size_t epoch = epoch; epoch < state.size(); ++epoch) {
             double* position = state[epoch];
             std::cout << std::fixed << std::setprecision(6);
             std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
