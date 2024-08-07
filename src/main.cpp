@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
     // std::vector<double> ref_location = coordinate::lla2ecef({36.372371713580250, 127.358800510185191, 91.642377777777796});
     std::vector<double> ref_location = {-3.119992580788137e+06, 4.086868171897103e+06, 3.761594895585738e+06};
 
-    const size_t val_num = 6; // x, y ,z, t_gps, t_glo,
+    const size_t val_num = 4; // x, y ,z, t_gps, t_glo,
     const size_t start_epoch = 0;
     const size_t T = 1000;
     const size_t max_epoch = start_epoch + T; 
@@ -91,17 +91,20 @@ int main(int argc, char** argv) {
 
             if (satellite < 32) // GPS
                 satellite_type = 0;
-            else if(satellite_type < 59) //GLO
+
+            else if(satellite < 59) //GLO
+
                 satellite_type = 4;
-            else if (satellite_type < 95) // GAL
+            else if (satellite < 95) // GAL
+
                 satellite_type = 1;
-            else if (satellite_type < 158) // BDS
+            else if (satellite < 158) // BDS
+    
                 satellite_type = 2;
             else
                 assert(false);
 
-            if (satellite_type > 3)
-                continue;
+            satellite_type = 0;
 
             double pr_value = pr_data[epoch][satellite];
             double pr_value_station = pr_data_station[epoch][satellite];
@@ -136,14 +139,23 @@ int main(int argc, char** argv) {
                     for(int i=0; i<3; i++)
                         sv_avg_pos_data.push_back((sv_pos_data[epoch][satellite][i] + sv_pos_data[epoch-1][satellite][i])/2);
 
+                    //Add Doppler Factor
                     factor::DopplerFactorCostFunctor* functor = 
-                        new factor::DopplerFactorCostFunctor(sv_avg_pos_data, sv_avg_vel_data, mean_dop_value, time_interval, satellite_type, 1.0);
+                        new factor::DopplerFactorCostFunctor(sv_avg_pos_data, sv_avg_vel_data, mean_dop_value, time_interval, satellite_type, 1e-3);
 
                     ceres::CostFunction* cost_function = 
                         new ceres::AutoDiffCostFunction<factor::DopplerFactorCostFunctor, 1, val_num, val_num>(functor);
 
-                    problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                    // problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
                 }
+
+                //Add Constant Clock Bias Factor
+                factor::ConstantClockBiasFactorCostFunctor* functor = 
+                        new factor::ConstantClockBiasFactorCostFunctor(satellite_type, 1e-6);
+
+                ceres::CostFunction* cost_function = 
+                    new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
+                // problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
             }
         }
 

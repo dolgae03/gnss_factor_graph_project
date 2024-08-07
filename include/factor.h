@@ -42,6 +42,26 @@ namespace factor {
 //         double sigma_;
 // };
 
+class ConstantClockBiasFactorCostFunctor {
+    public:
+        ConstantClockBiasFactorCostFunctor(int satellite_type, double sigma)
+            : satellite_type_(satellite_type), sigma_(sigma) {}
+
+        template <typename T>
+        bool operator()(const T* const state1, const T* const state2, T* residual) const {
+            // state1과 state2의 clock bias 차이 계산
+            T clock_bias1 = state1[satellite_type_];
+            T clock_bias2 = state2[satellite_type_];
+            
+            residual[0] = clock_bias1 - clock_bias2;
+            return true;
+        }
+
+    private:
+        int satellite_type_;
+        double sigma_;
+};
+
 
 class DiffPesudorangeFactorCostFunctor {
     public:
@@ -135,12 +155,10 @@ class DopplerFactorCostFunctor {
                     L1_frequency = T(1561.098e6);
                     break;
                 default:
-                    // Default to GPS L1C if an unknown satellite type is provided
                     L1_frequency = T(1575.42e6);
                     break;
             }
 
-            // Calculate the LOS vector from the user's position to the satellite's position
             T los_vector[3];
             T user_position[3];
             for (int i = 0; i < 3; ++i) {
@@ -163,12 +181,10 @@ class DopplerFactorCostFunctor {
             for (int i = 0; i < 3; ++i) 
                 relative_velocity[i] = user_velocity[i] - T(sv_velocity_[i]);
 
-            // Project relative velocity onto the LOS vector to get the relative speed
             T relative_speed = relative_velocity[0] * los_vector[0] +
                             relative_velocity[1] * los_vector[1] +
                             relative_velocity[2] * los_vector[2];
 
-            // Convert Doppler shift to velocity
             T doppler_velocity = T(doppler_) * T(c) / L1_frequency;
     
             residual[0] = (relative_speed - doppler_velocity) / T(sigma_);
