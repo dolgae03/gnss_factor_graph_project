@@ -14,7 +14,7 @@ using namespace std;
 #include <utility>
 #include <stdexcept>
 #include "ceres/ceres.h"
-#include "../include/factor.h"
+#include "../include/factors.h"
 #include "../include/csv_utils.h"
 #include "../include/cord_utils.h"
 

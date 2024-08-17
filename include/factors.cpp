@@ -1,4 +1,4 @@
-#include <fstream>
+이 코드 cpp와 h 파일로 분할해줘 #include <fstream>
 #include <iostream>
 #include <cmath>
 #include <vector>
@@ -15,33 +15,6 @@ using namespace std;
 #include "ceres/ceres.h"
 
 namespace factor {
-
-// class PesudorangeFactorCostFunctor {
-//     public:
-//         PesudorangeFactorCostFunctor(const std::vector<double>& sv_position, double pesudorange, double sigma)
-//             : sv_position_(sv_position), pesudorange_(pesudorange), sigma_(sigma) {}
-
-//         template <typename T>
-//         bool operator()(const T* state, T* residual) const {
-//             const double c = 299792458.0; // Speed of light in m/s
-//             T dx = state[0] - T(sv_position_[0]);
-//             T dy = state[1] - T(sv_position_[1]);
-//             T dz = state[2] - T(sv_position_[2]);
-//             T clock_bias = state[3] * T(c);
-
-//             T estimated_pr = ceres::sqrt(dx * dx + dy * dy + dz * dz) + clock_bias;
-
-//             residual[0] = (estimated_pr - T(pesudorange_)) / sigma_;
-
-//             return true;
-//         }
-
-//     private:
-//         std::vector<double> sv_position_;
-//         double pesudorange_;
-//         double sigma_;
-// };
-
 class ConstantClockBiasFactorCostFunctor {
     public:
         ConstantClockBiasFactorCostFunctor(int satellite_type, double sigma)
@@ -133,6 +106,8 @@ class DiffPesudorangeFactorCostFunctor {
         int satellite_type_;
 };
 
+
+// 필요한 정보듣 pr difference,     
 class DopplerFactorCostFunctor {
     public:
         DopplerFactorCostFunctor(const std::vector<double>& sv_position, const std::vector<double>& sv_velocity, double doppler, double time_interval, int satellite_type, double sigma)
@@ -141,24 +116,8 @@ class DopplerFactorCostFunctor {
         template <typename T>
         bool operator()(const T* const prev_state, const T* const next_state, T* residual) const {
             const double c = 299792458.0;  // speed of light in m/s
-            T L1_frequency;  // L1 signal frequency in Hz
+            T L1_frequency = GetL1Frequency<T>(satellite_type_);  // L1 signal frequency in Hz
             
-            // Define frequencies for each satellite type
-            switch (satellite_type_) {
-                case 0:  // GPS L1C
-                    L1_frequency = T(1575.42e6);
-                    break;
-                case 1:  // GALILEO L1C
-                    L1_frequency = T(1575.42e6);
-                    break;
-                case 2:  // Beidou B2
-                    L1_frequency = T(1561.098e6);
-                    break;
-                default:
-                    L1_frequency = T(1575.42e6);
-                    break;
-            }
-
             T los_vector[3];
             T user_position[3];
             for (int i = 0; i < 3; ++i) {
@@ -201,4 +160,124 @@ class DopplerFactorCostFunctor {
         double sigma_;
 };
 
+class TDCPFactorCostFunctor {
+public:
+    TDCPFactorCostFunctor(const std::vector<double>& sv_position_prev,
+                          const std::vector<double>& sv_position_curr,
+                          double pseudorange,
+                          int satellite_type,
+                          double sigma)
+        : sv_position_prev_(sv_position_prev),
+          sv_position_curr_(sv_position_curr),
+          pseudorange_(pseudorange),
+          satellite_type_(satellite_type),
+          sigma_(sigma) {}
+
+    template <typename T>
+    bool operator()(const T* const prev_state, const T* const curr_state, T* residual) const {
+        const double c = 299792458.0;  // Speed of light in m/s
+        const double omega = 7.292115e-5;  // Earth rotation rate in rad/s
+
+        T L1_frequency = GetL1Frequency<T>(satellite_type_);  // L1 signal frequency in Hz
+
+        T sv_position_prev_rot[3];
+        T sv_position_curr_rot[3];
+        RotateSatellitePosition(prev_state, sv_position_prev_, sv_position_prev_rot);
+        RotateSatellitePosition(curr_state, sv_position_curr_, sv_position_curr_rot);
+
+        T los_vector_prev[3];
+        T los_vector_curr[3];
+        CalculateLOS(prev_state, sv_position_prev_rot, los_vector_prev);
+        CalculateLOS(curr_state, sv_position_curr_rot, los_vector_curr);
+
+        T D = T(0);
+        T g = T(0);
+
+        for (int i = 0; i < 3; ++i) {
+            D += los_vector_curr[i] * T(sv_position_curr_[i]) - los_vector_prev[i] * T(sv_position_prev_rot[i]);
+            g += los_vector_curr[i] * curr_state[i] - los_vector_prev[i] * prev_state[i];
+        }
+
+        T tdcp_pred = T(0);
+        T tdcp_measure = T(pseudorange_) - (D - g);
+
+        for (int i = 0; i < 3; ++i) {
+            tdcp_pred += -los_vector_curr[i] * (curr_state[i] - prev_state[i]);
+        }
+
+        residual[0] = tdcp_pred - tdcp_measure;
+
+        return true;
+    }
+
+private:
+    std::vector<double> sv_position_prev_;
+    std::vector<double> sv_position_curr_;
+    double pseudorange_;
+    int satellite_type_;
+    double sigma_;
+
+    template <typename T>
+    T GetL1Frequency(int satellite_type) const {
+        switch (satellite_type) {
+            case 0:  // GPS L1C
+                return T(1575.42e6);
+            case 1:  // GALILEO L1C
+                return T(1575.42e6);
+            case 2:  // Beidou B2
+                return T(1561.098e6);
+            default:
+                throw std::invalid_argument("Unknown satellite type");
+        }
+    }
+
+    template <typename T>
+    void CalculateLOS(const T* user_state,
+                      const T* satellite_position,
+                      T* los_vector) const {
+        T diff_vector[3];
+        for (int i = 0; i < 3; ++i) {
+            diff_vector[i] = satellite_position[i] - user_state[i];
+        }
+
+        T norm = ceres::sqrt(diff_vector[0] * diff_vector[0] +
+                             diff_vector[1] * diff_vector[1] +
+                             diff_vector[2] * diff_vector[2]);
+
+        for (int i = 0; i < 3; ++i) {
+            los_vector[i] = diff_vector[i] / norm;
+        }
+    }
+
+    template <typename T>
+    void RotateSatellitePosition(const T* user_state,
+                                 const std::vector<double>& satellite_position,
+                                 T* satellite_position_rot) const {
+        const double c = 299792458.0; // Speed of light in m/s
+        const double omega = 7.2921151467e-5; // Earth's rotation rate in rad/s
+
+        T diff_vector[3];
+        for (int i = 0; i < 3; ++i) {
+            diff_vector[i] = T(satellite_position[i]) - user_state[i];
+        }
+
+        T norm = ceres::sqrt(diff_vector[0] * diff_vector[0] +
+                             diff_vector[1] * diff_vector[1] +
+                             diff_vector[2] * diff_vector[2]);
+
+        T sx = T(satellite_position[0]);
+        T sy = T(satellite_position[1]);
+        T sz = T(satellite_position[2]);
+
+        T C[3][3] = {
+            {T(1), T(omega) * norm / T(c), T(0)},
+            {T(-omega) * norm / T(c), T(1), T(0)},
+            {T(0), T(0), T(1)}
+        };
+
+        satellite_position_rot[0] = C[0][0] * sx + C[0][1] * sy + C[0][2] * sz;
+        satellite_position_rot[1] = C[1][0] * sx + C[1][1] * sy + C[1][2] * sz;
+        satellite_position_rot[2] = C[2][0] * sx + C[2][1] * sy + C[2][2] * sz;
+    }
 };
+}
