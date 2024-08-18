@@ -35,7 +35,9 @@ int main(int argc, char** argv) {
     std::string log_file_ecef = "../result/pos_ecef.csv";
     std::string log_file_llh = "../result/pos_llh.csv";
     std::string log_file_cov = "../result/error_cov.csv";
+
     std::string pr_file = "pr.csv";
+    std::string ph_file = "carrier.csv";
     std::string dop_file = "dop.csv";
     std::string sv_pos_file = "sv_pos.csv";
     std::string sv_vel_file = "sv_vel.csv";
@@ -43,6 +45,7 @@ int main(int argc, char** argv) {
 
     // CSV 파일 읽기
     std::vector<std::vector<double>> pr_data = readPseudorangeCSV(rover_dir + pr_file);
+    std::vector<std::vector<double>> ph_data = readPseudorangeCSV(rover_dir + ph_file);
     std::vector<std::vector<double>> dop_data = readPseudorangeCSV(rover_dir + dop_file);
     std::vector<std::vector<std::vector<double>>> sv_pos_data = readSVPosAndVelCSV(rover_dir + sv_pos_file);
     std::vector<std::vector<std::vector<double>>> sv_vel_data = readSVPosAndVelCSV(rover_dir + sv_vel_file);
@@ -71,7 +74,7 @@ int main(int argc, char** argv) {
     // std::vector<double> ref_location = coordinate::lla2ecef({36.372371713580250, 127.358800510185191, 91.642377777777796});
     std::vector<double> ref_location = {-3.119992580788137e+06, 4.086868171897103e+06, 3.761594895585738e+06};
 
-    const size_t val_num = 4; // x, y ,z, t_gps, t_glo,
+    const size_t val_num = 6; // x, y ,z, t_gps, t_glo,
     const size_t start_epoch = 0;
     const size_t T = 1000;
     const size_t max_epoch = start_epoch + T; 
@@ -86,8 +89,6 @@ int main(int argc, char** argv) {
 
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
             int satellite_type;
-            if (satellite == 140 - 1)
-                continue;
 
             if (satellite < 32) // GPS
                 satellite_type = 0;
@@ -104,7 +105,7 @@ int main(int argc, char** argv) {
             else
                 assert(false);
 
-            satellite_type = 0;
+            // satellite_type = 0;
 
             double pr_value = pr_data[epoch][satellite];
             double pr_value_station = pr_data_station[epoch][satellite];
@@ -123,38 +124,58 @@ int main(int argc, char** argv) {
             if(epoch > start_epoch){
                 double prev_dop_value = dop_data[epoch-1][satellite]; // Hz
 
-                if (!std::isnan(prev_dop_value) && 
-                    !std::isnan(next_dop_value) &&
-                    !check_sv_data(sv_vel_data[epoch][satellite]) && 
-                    !check_sv_data(sv_vel_data[epoch-1][satellite])){
+                // if (!std::isnan(prev_dop_value) && 
+                //     !std::isnan(next_dop_value) &&
+                //     !check_sv_data(sv_vel_data[epoch][satellite]) && 
+                //     !check_sv_data(sv_vel_data[epoch-1][satellite])){
 
-                    double mean_dop_value = (prev_dop_value + next_dop_value) / 2;
-                    double time_interval = time_data[epoch].second - time_data[epoch-1].second;
+                //     double mean_dop_value = (prev_dop_value + next_dop_value) / 2;
+                //     double time_interval = time_data[epoch].second - time_data[epoch-1].second;
 
-                    std::vector<double> sv_avg_vel_data;
-                    for(int i=0; i<3; i++)
-                        sv_avg_vel_data.push_back((sv_vel_data[epoch][satellite][i] + sv_vel_data[epoch-1][satellite][i])/2);
+                //     std::vector<double> sv_avg_vel_data;
+                //     for(int i=0; i<3; i++)
+                //         sv_avg_vel_data.push_back((sv_vel_data[epoch][satellite][i] + sv_vel_data[epoch-1][satellite][i])/2);
 
-                    std::vector<double> sv_avg_pos_data;
-                    for(int i=0; i<3; i++)
-                        sv_avg_pos_data.push_back((sv_pos_data[epoch][satellite][i] + sv_pos_data[epoch-1][satellite][i])/2);
+                //     std::vector<double> sv_avg_pos_data;
+                //     for(int i=0; i<3; i++)
+                //         sv_avg_pos_data.push_back((sv_pos_data[epoch][satellite][i] + sv_pos_data[epoch-1][satellite][i])/2);
 
-                    //Add Doppler Factor
-                    factor::DopplerFactorCostFunctor* functor = 
-                        new factor::DopplerFactorCostFunctor(sv_avg_pos_data, sv_avg_vel_data, mean_dop_value, time_interval, satellite_type, 1e-3);
+                //     //Add Doppler Factor
+                //     factor::DopplerFactorCostFunctor* functor = 
+                //         new factor::DopplerFactorCostFunctor(sv_avg_pos_data, sv_avg_vel_data, mean_dop_value, time_interval, satellite_type, 1e-3);
+
+                //     ceres::CostFunction* cost_function = 
+                //         new ceres::AutoDiffCostFunction<factor::DopplerFactorCostFunctor, 1, val_num, val_num>(functor);
+
+                //     // problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                // }
+
+                double prev_ph_value = ph_data[epoch-1][satellite];
+                double curr_ph_value = ph_data[epoch][satellite];
+
+                if (!std::isnan(prev_ph_value) && 
+                    !std::isnan(curr_ph_value) &&
+                    !check_sv_data(sv_pos_data[epoch][satellite]) && 
+                    !check_sv_data(sv_pos_data[epoch-1][satellite])){
+
+                    //Add TDCP Factor
+                    factor::TDCPFactorCostFunctor* functor = 
+                        new factor::TDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
+                                                          curr_ph_value - prev_ph_value,
+                                                          satellite_type, 50);
 
                     ceres::CostFunction* cost_function = 
-                        new ceres::AutoDiffCostFunction<factor::DopplerFactorCostFunctor, 1, val_num, val_num>(functor);
+                        new ceres::AutoDiffCostFunction<factor::TDCPFactorCostFunctor, 1, val_num, val_num>(functor);
 
-                    // problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                    problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
                 }
 
-                //Add Constant Clock Bias Factor
-                factor::ConstantClockBiasFactorCostFunctor* functor = 
-                        new factor::ConstantClockBiasFactorCostFunctor(satellite_type, 1e-6);
+                // //Add Constant Clock Bias Factor
+                // factor::ConstantClockBiasFactorCostFunctor* functor = 
+                //         new factor::ConstantClockBiasFactorCostFunctor(satellite_type, 1e-6);
 
-                ceres::CostFunction* cost_function = 
-                    new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
+                // ceres::CostFunction* cost_function = 
+                //     new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
                 // problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
             }
         }
