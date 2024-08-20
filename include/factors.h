@@ -27,11 +27,59 @@ double GetL1Frequency(int satellite_type) {
     }
 }
 
+template <typename T>
+void RotateSatellitePosition(const T* user_state,
+                                const std::vector<double>& satellite_position,
+                                T* satellite_position_rot) {
+    const double c = 299792458.0; // Speed of light in m/s
+    const double omega = 7.2921151467e-5; // Earth's rotation rate in rad/s
+
+    T diff_vector[3];
+    for (int i = 0; i < 3; ++i) {
+        diff_vector[i] = T(satellite_position[i]) - user_state[i];
+    }
+
+    T norm = ceres::sqrt(diff_vector[0] * diff_vector[0] +
+                            diff_vector[1] * diff_vector[1] +
+                            diff_vector[2] * diff_vector[2]);
+
+    T C[3][3] = {
+        {T(1), T(omega) * norm / T(c), T(0)},
+        {T(-omega) * norm / T(c), T(1), T(0)},
+        {T(0), T(0), T(1)}
+    };
+
+    for(int i=0; i<3; i++){
+        satellite_position_rot[i] = T(0);
+        for(int j=0; j<3; j++){
+            satellite_position_rot[i] += C[i][j] * T(satellite_position[j]);
+        }
+    }
+}
+
+template <typename T>
+void CalculateLOS(const T* user_state,
+                const T* satellite_position,
+                T* los_vector) {
+    T diff_vector[3];
+    for (int i = 0; i < 3; ++i) {
+        diff_vector[i] = satellite_position[i] - user_state[i];
+    }
+
+    T norm = ceres::sqrt(diff_vector[0] * diff_vector[0] +
+                        diff_vector[1] * diff_vector[1] +
+                        diff_vector[2] * diff_vector[2]);
+
+    for (int i = 0; i < 3; ++i) {
+        los_vector[i] = diff_vector[i] / norm;
+    }
+}
+
 namespace factor {
 class ConstantClockBiasFactorCostFunctor {
     public:
-        ConstantClockBiasFactorCostFunctor(int satellite_type, double sigma)
-            : satellite_type_(satellite_type), sigma_(sigma) {}
+        ConstantClockBiasFactorCostFunctor(int satellite_type, double weight)
+            : satellite_type_(satellite_type), weight_(weight) {}
 
         template <typename T>
         bool operator()(const T* const state1, const T* const state2, T* residual) const {
@@ -39,13 +87,13 @@ class ConstantClockBiasFactorCostFunctor {
             T clock_bias1 = state1[satellite_type_];
             T clock_bias2 = state2[satellite_type_];
             
-            residual[0] = clock_bias1 - clock_bias2;
+            residual[0] = (clock_bias1 - clock_bias2) * T(weight_);
             return true;
         }
 
     private:
         int satellite_type_;
-        double sigma_;
+        double weight_;
 };
 
 
@@ -193,63 +241,15 @@ public:
 
         T L1_frequency = T(GetL1Frequency(satellite_type_));  // L1 signal frequency in Hz
 
-        ///////
+        T sv_position_prev_rot[3];
+        T sv_position_curr_rot[3];
+        RotateSatellitePosition(prev_state, sv_position_prev_, sv_position_prev_rot);
+        RotateSatellitePosition(curr_state, sv_position_curr_, sv_position_curr_rot);
+
         T los_vector_prev[3];
-        T sv_position_prev_rot[3];     
-
-        T diff_vector_prev[3];
-        for (int i = 0; i < 3; ++i) 
-            diff_vector_prev[i] = T(sv_position_prev_[i]) - prev_state[i];
-
-        T norm_prev = ceres::sqrt(diff_vector_prev[0] * diff_vector_prev[0] +
-                             diff_vector_prev[1] * diff_vector_prev[1] +
-                             diff_vector_prev[2] * diff_vector_prev[2]);
-
-        for (int i = 0; i < 3; ++i) 
-            los_vector_prev[i] = diff_vector_prev[i] / norm_prev;
-
-        T C_prev[3][3] = {
-            {T(1), T(omega) * norm_prev / T(c), T(0)},
-            {T(-omega) * norm_prev / T(c), T(1), T(0)},
-            {T(0), T(0), T(1)}
-        };
-        
-        for (int i=0; i<3; i++){
-            sv_position_prev_rot[i] = T(0);
-            for (int j=0; j<3; j++){
-                sv_position_prev_rot[i] += C_prev[i][j] * T(sv_position_prev_[j]);
-            }
-        }
-
-        //////
         T los_vector_curr[3];
-        T sv_position_curr_rot[3];  
-
-        T diff_vector_curr[3];   
-
-        for (int i = 0; i < 3; ++i) 
-            diff_vector_curr[i] = T(sv_position_curr_[i]) - curr_state[i];
-
-        T norm_curr = ceres::sqrt(diff_vector_curr[0] * diff_vector_curr[0] +
-                             diff_vector_curr[1] * diff_vector_curr[1] +
-                             diff_vector_curr[2] * diff_vector_curr[2]);
-
-
-        for (int i = 0; i < 3; ++i) 
-            los_vector_curr[i] = diff_vector_curr[i] / norm_prev;
-
-        T C_curr[3][3] = {
-            {T(1), T(omega) * norm_curr / T(c), T(0)},
-            {T(-omega) * norm_curr / T(c), T(1), T(0)},
-            {T(0), T(0), T(1)}
-        };
-        
-        for (int i=0; i<3; i++){
-            sv_position_curr_rot[i] = T(0);
-            for (int j=0; j<3; j++){
-                sv_position_curr_rot[i] += C_curr[i][j] * T(sv_position_curr_[j]);
-            }
-        }
+        CalculateLOS(prev_state, sv_position_prev_rot, los_vector_prev);
+        CalculateLOS(curr_state, sv_position_curr_rot, los_vector_curr);
 
         T D = T(0);
         T g = T(0);
@@ -277,37 +277,5 @@ private:
     double pseudorange_;
     int satellite_type_;
     double weight_;
-
-
-    // template <typename T>
-    // void RotateSatellitePosition(const T* user_state,
-    //                              const std::vector<double>& satellite_position,
-    //                              T* satellite_position_rot) const {
-    //     const double c = 299792458.0; // Speed of light in m/s
-    //     const double omega = 7.2921151467e-5; // Earth's rotation rate in rad/s
-
-    //     T diff_vector[3];
-    //     for (int i = 0; i < 3; ++i) {
-    //         diff_vector[i] = T(satellite_position[i]) - user_state[i];
-    //     }
-
-    //     T norm = ceres::sqrt(diff_vector[0] * diff_vector[0] +
-    //                          diff_vector[1] * diff_vector[1] +
-    //                          diff_vector[2] * diff_vector[2]);
-
-    //     T sx = T(satellite_position[0]);
-    //     T sy = T(satellite_position[1]);
-    //     T sz = T(satellite_position[2]);
-
-    //     T C[3][3] = {
-    //         {T(1), T(omega) * norm / T(c), T(0)},
-    //         {T(-omega) * norm / T(c), T(1), T(0)},
-    //         {T(0), T(0), T(1)}
-    //     };
-
-    //     satellite_position_rot[0] = C[0][0] * sx + C[0][1] * sy + C[0][2] * sz;
-    //     satellite_position_rot[1] = C[1][0] * sx + C[1][1] * sy + C[1][2] * sz;
-    //     satellite_position_rot[2] = C[2][0] * sx + C[2][1] * sy + C[2][2] * sz;
-    // }
 };
 }
