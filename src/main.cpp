@@ -20,8 +20,8 @@ using namespace std;
 
 
 #define DF_PR_WEIGHT (double)1.0
-#define TDCP_WEIGHT (double)1e-6
-#define CONSATANT_CLOCK_WEIGHT (double)1e-6
+#define TDCP_WEIGHT (double)1.0
+#define CONSATANT_CLOCK_WEIGHT (double)1.0
 
 
 template <typename T>
@@ -37,12 +37,9 @@ bool check_sv_data(T vector){
 int main(int argc, char** argv) {
     std::string rover_dir = "../data/data_rover/";
     std::string station_dir = "../data/data_station/";
-    // std::string log_file_ecef = "../result/pos_ecef.csv";
-    // std::string log_file_llh = "../result/pos_llh.csv";
-    // std::string log_file_cov = "../result/error_cov.csv";
-    std::string log_file_ecef = "/Users/mskim/Desktop/workspace/fgo_basic/result/result_ceres/result/pos_ecef.csv";
-    std::string log_file_llh = "/Users/mskim/Desktop/workspace/fgo_basic/result/result_ceres/result/pos_llh.csv";
-    std::string log_file_cov = "/Users/mskim/Desktop/workspace/fgo_basic/result/result_ceres/result/error_cov.csv";
+    std::string log_file_ecef = "../result/pos_ecef.csv";
+    std::string log_file_llh = "../result/pos_llh.csv";
+    std::string log_file_cov = "../result/error_cov.csv";
 
     std::string pr_file = "pr.csv";
     std::string ph_file = "carrier.csv";
@@ -64,6 +61,10 @@ int main(int argc, char** argv) {
     std::vector<std::vector<std::vector<double>>> sv_pos_data_station = readSVPosAndVelCSV(station_dir + sv_pos_file);
     std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
     std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(station_dir + time_file);
+
+    std::filesystem::path dir = "../result";
+
+    std::filesystem::create_directory("../result");
 
     // log results
     std::ofstream fout_ecef(log_file_ecef);
@@ -191,29 +192,29 @@ int main(int argc, char** argv) {
                     !check_sv_data(sv_pos_data[epoch][satellite]) && 
                     !check_sv_data(sv_pos_data[epoch-1][satellite])){
 
-                    // //Add TDCP Factor
-                    // factor::TDCPFactorCostFunctor* functor = 
-                    //     new factor::TDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
-                    //                                       curr_ph_value - prev_ph_value,
-                    //                                       satellite_type, TDCP_WEIGHT / tdcp_cnt);
+                    //Add TDCP Factor
+                    factor::TDCPFactorCostFunctor* functor = 
+                        new factor::TDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
+                                                          curr_ph_value - prev_ph_value,
+                                                          satellite_type, TDCP_WEIGHT / tdcp_cnt);
 
-                    // ceres::CostFunction* cost_function = 
-                    //     new ceres::AutoDiffCostFunction<factor::TDCPFactorCostFunctor, 1, val_num, val_num>(functor);
+                    ceres::CostFunction* cost_function = 
+                        new ceres::AutoDiffCostFunction<factor::TDCPFactorCostFunctor, 1, val_num, val_num>(functor);
 
-                    // problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                    problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
                 }
             }
         }
 
         if (epoch > start_epoch){
             for(int i=4; i<7; i++){
-            // //Add Constant Clock Bias Factor
-            //     factor::ConstantClockBiasFactorCostFunctor* functor = 
-            //             new factor::ConstantClockBiasFactorCostFunctor(i ,CONSATANT_CLOCK_WEIGHT / clock_const_cnt);
+            // Add Constant Clock Bias Factor
+                factor::ConstantClockBiasFactorCostFunctor* functor = 
+                        new factor::ConstantClockBiasFactorCostFunctor(i ,CONSATANT_CLOCK_WEIGHT / clock_const_cnt);
 
-            //     ceres::CostFunction* cost_function = 
-            //         new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
-            //     problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                ceres::CostFunction* cost_function = 
+                    new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
+                problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
             }
         }
 
