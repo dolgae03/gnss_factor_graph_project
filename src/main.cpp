@@ -19,6 +19,11 @@ using namespace std;
 #include "../include/cord_utils.h"
 
 
+#define DF_PR_WEIGHT (double)1.0
+#define TDCP_WEIGHT (double)1.0
+#define CONSATANT_CLOCK_WEIGHT (double)1.0
+
+
 template <typename T>
 bool check_sv_data(T vector){
     for(int i=0; i<vector.size(); i++)
@@ -57,6 +62,10 @@ int main(int argc, char** argv) {
     std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
     std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(station_dir + time_file);
 
+    std::filesystem::path dir = "../result";
+
+    std::filesystem::create_directory("../result");
+
     // log results
     std::ofstream fout_ecef(log_file_ecef);
     std::ofstream fout_llh(log_file_llh);
@@ -82,30 +91,82 @@ int main(int argc, char** argv) {
     double* previous_position = nullptr;
     double* current_position = nullptr;
 
+    size_t tdcp_cnt = 0, df_pr_cnt = 0, clock_const_cnt = 0;
+
+    //Calculate Weight
+    for(size_t epoch=start_epoch; epoch <= max_epoch; ++epoch){
+        for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
+            double pr_value = pr_data[epoch][satellite];
+            double pr_value_station = pr_data_station[epoch][satellite];
+            double next_dop_value = dop_data[epoch][satellite];
+
+            int satellite_type;
+
+            if (satellite < 32) // GPS
+                satellite_type = 0;
+            else if(satellite < 59) //GLO
+                satellite_type = 4;
+            else if (satellite < 95) // GAL
+                satellite_type = 1;
+            else if (satellite < 158) // BDS
+                satellite_type = 2;
+            else
+                assert(false);
+
+            if(satellite_type > 2)
+                continue;
+
+            if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
+                df_pr_cnt += 1;
+            }
+
+            if(epoch > start_epoch){
+                double prev_dop_value = dop_data[epoch-1][satellite]; // Hz
+
+                double prev_ph_value = ph_data[epoch-1][satellite];
+                double curr_ph_value = ph_data[epoch][satellite];
+
+                if (!std::isnan(prev_ph_value) && 
+                    !std::isnan(curr_ph_value) &&
+                    !check_sv_data(sv_pos_data[epoch][satellite]) && 
+                    !check_sv_data(sv_pos_data[epoch-1][satellite])){
+
+                    tdcp_cnt += 1;
+                }
+            }
+        }
+        if(epoch > start_epoch)
+            clock_const_cnt += 3;
+    }
+
+
+
+    std::cout << DF_PR_WEIGHT / df_pr_cnt << " " << TDCP_WEIGHT / tdcp_cnt << " " << CONSATANT_CLOCK_WEIGHT / clock_const_cnt << std::endl;
+
     for(size_t epoch=start_epoch; epoch <= max_epoch; ++epoch){
         previous_position = current_position;
         current_position = new double[val_num];
         std::fill(current_position, current_position + val_num, 0.0); 
+
+        for(int i=0; i<3; i++)
+            current_position[i] = ref_location[i];   
 
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
             int satellite_type;
 
             if (satellite < 32) // GPS
                 satellite_type = 0;
-
             else if(satellite < 59) //GLO
-
                 satellite_type = 4;
             else if (satellite < 95) // GAL
-
                 satellite_type = 1;
             else if (satellite < 158) // BDS
-    
                 satellite_type = 2;
             else
                 assert(false);
 
-            // satellite_type = 0;
+            if(satellite_type > 2)
+                continue;
 
             double pr_value = pr_data[epoch][satellite];
             double pr_value_station = pr_data_station[epoch][satellite];
@@ -113,7 +174,8 @@ int main(int argc, char** argv) {
 
             if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
                 factor::DiffPesudorangeFactorCostFunctor* functor = 
-                    new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], pr_value-pr_value_station, satellite_type, 0.5);
+                    new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
+                                                                pr_value-pr_value_station, satellite_type, DF_PR_WEIGHT);
 
                 ceres::CostFunction* cost_function =
                     new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, val_num>(functor);
@@ -122,34 +184,6 @@ int main(int argc, char** argv) {
             }
 
             if(epoch > start_epoch){
-                double prev_dop_value = dop_data[epoch-1][satellite]; // Hz
-
-                // if (!std::isnan(prev_dop_value) && 
-                //     !std::isnan(next_dop_value) &&
-                //     !check_sv_data(sv_vel_data[epoch][satellite]) && 
-                //     !check_sv_data(sv_vel_data[epoch-1][satellite])){
-
-                //     double mean_dop_value = (prev_dop_value + next_dop_value) / 2;
-                //     double time_interval = time_data[epoch].second - time_data[epoch-1].second;
-
-                //     std::vector<double> sv_avg_vel_data;
-                //     for(int i=0; i<3; i++)
-                //         sv_avg_vel_data.push_back((sv_vel_data[epoch][satellite][i] + sv_vel_data[epoch-1][satellite][i])/2);
-
-                //     std::vector<double> sv_avg_pos_data;
-                //     for(int i=0; i<3; i++)
-                //         sv_avg_pos_data.push_back((sv_pos_data[epoch][satellite][i] + sv_pos_data[epoch-1][satellite][i])/2);
-
-                //     //Add Doppler Factor
-                //     factor::DopplerFactorCostFunctor* functor = 
-                //         new factor::DopplerFactorCostFunctor(sv_avg_pos_data, sv_avg_vel_data, mean_dop_value, time_interval, satellite_type, 1e-3);
-
-                //     ceres::CostFunction* cost_function = 
-                //         new ceres::AutoDiffCostFunction<factor::DopplerFactorCostFunctor, 1, val_num, val_num>(functor);
-
-                //     // problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
-                // }
-
                 double prev_ph_value = ph_data[epoch-1][satellite];
                 double curr_ph_value = ph_data[epoch][satellite];
 
@@ -162,21 +196,25 @@ int main(int argc, char** argv) {
                     factor::TDCPFactorCostFunctor* functor = 
                         new factor::TDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
                                                           curr_ph_value - prev_ph_value,
-                                                          satellite_type, 50);
+                                                          satellite_type, TDCP_WEIGHT / tdcp_cnt);
 
                     ceres::CostFunction* cost_function = 
                         new ceres::AutoDiffCostFunction<factor::TDCPFactorCostFunctor, 1, val_num, val_num>(functor);
 
                     problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
                 }
+            }
+        }
 
-                // //Add Constant Clock Bias Factor
-                // factor::ConstantClockBiasFactorCostFunctor* functor = 
-                //         new factor::ConstantClockBiasFactorCostFunctor(satellite_type, 1e-6);
+        if (epoch > start_epoch){
+            for(int i=4; i<7; i++){
+            // Add Constant Clock Bias Factor
+                factor::ConstantClockBiasFactorCostFunctor* functor = 
+                        new factor::ConstantClockBiasFactorCostFunctor(i ,CONSATANT_CLOCK_WEIGHT / clock_const_cnt);
 
-                // ceres::CostFunction* cost_function = 
-                //     new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
-                // problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                ceres::CostFunction* cost_function = 
+                    new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
+                problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
             }
         }
 
@@ -208,7 +246,7 @@ int main(int argc, char** argv) {
     for (size_t epoch = 0; epoch < state.size(); ++epoch) {
         double* position = state[epoch];
         std::cout << std::fixed << std::setprecision(6);
-        std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
+        // std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
         fout_ecef << epoch << ", " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
 
         std::vector<double> ecef_position = {position[0], position[1], position[2]};
@@ -217,19 +255,19 @@ int main(int argc, char** argv) {
         std::cout << "Epoch(LLA) " << epoch << ": " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
         fout_llh << epoch << ", " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
 
-        if (covariance_result){
-            double covariance_matrix[3 * 3];
-            covariance.GetCovarianceBlock(position, position, covariance_matrix);
-            std::cout << "Covariance Matrix:\n";
-            for (int i = 0; i < 3; ++i) {
-                for (int j = 0; j < 3; ++j) {
-                    std::cout << covariance_matrix[3 * i + j] << " ";
-                    fout_cov << covariance_matrix[3 * i + j] << ", ";
-                }
-                std::cout << "\n";
-                fout_cov << "\n";
-            }
-        }    
+        // if (covariance_result){
+        //     double covariance_matrix[3 * 3];
+        //     covariance.GetCovarianceBlock(position, position, covariance_matrix);
+        //     std::cout << "Covariance Matrix:\n";
+        //     for (int i = 0; i < 3; ++i) {
+        //         for (int j = 0; j < 3; ++j) {
+        //             std::cout << covariance_matrix[3 * i + j] << " ";
+        //             fout_cov << covariance_matrix[3 * i + j] << ", ";
+        //         }
+        //         std::cout << "\n";
+        //         fout_cov << "\n";
+        //     }
+        // }    
 
         delete[] position; // 메모리 해제
     }
