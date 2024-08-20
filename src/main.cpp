@@ -18,9 +18,10 @@ using namespace std;
 #include "../include/csv_utils.h"
 #include "../include/cord_utils.h"
 
-#define TDCP_WEIGHT (double)1.0
-#define DF_PR_WEIGHT (double)0.01
-#define CONSATANT_CLOCK_WEIGHT (double)1.0e7 
+
+#define DF_PR_WEIGHT (double)1.0
+#define TDCP_WEIGHT (double)1e-6
+#define CONSATANT_CLOCK_WEIGHT (double)1e-6
 
 
 template <typename T>
@@ -36,9 +37,12 @@ bool check_sv_data(T vector){
 int main(int argc, char** argv) {
     std::string rover_dir = "../data/data_rover/";
     std::string station_dir = "../data/data_station/";
-    std::string log_file_ecef = "../result/pos_ecef.csv";
-    std::string log_file_llh = "../result/pos_llh.csv";
-    std::string log_file_cov = "../result/error_cov.csv";
+    // std::string log_file_ecef = "../result/pos_ecef.csv";
+    // std::string log_file_llh = "../result/pos_llh.csv";
+    // std::string log_file_cov = "../result/error_cov.csv";
+    std::string log_file_ecef = "/Users/mskim/Desktop/workspace/fgo_basic/result/result_ceres/result/pos_ecef.csv";
+    std::string log_file_llh = "/Users/mskim/Desktop/workspace/fgo_basic/result/result_ceres/result/pos_llh.csv";
+    std::string log_file_cov = "/Users/mskim/Desktop/workspace/fgo_basic/result/result_ceres/result/error_cov.csv";
 
     std::string pr_file = "pr.csv";
     std::string ph_file = "carrier.csv";
@@ -128,13 +132,15 @@ int main(int argc, char** argv) {
 
                     tdcp_cnt += 1;
                 }
-
-                clock_const_cnt += 1;
             }
-            
         }
+        if(epoch > start_epoch)
+            clock_const_cnt += 3;
     }
 
+
+
+    std::cout << DF_PR_WEIGHT / df_pr_cnt << " " << TDCP_WEIGHT / tdcp_cnt << " " << CONSATANT_CLOCK_WEIGHT / clock_const_cnt << std::endl;
 
     for(size_t epoch=start_epoch; epoch <= max_epoch; ++epoch){
         previous_position = current_position;
@@ -168,7 +174,7 @@ int main(int argc, char** argv) {
             if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
                 factor::DiffPesudorangeFactorCostFunctor* functor = 
                     new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
-                                                                pr_value-pr_value_station, satellite_type, DF_PR_WEIGHT / df_pr_cnt);
+                                                                pr_value-pr_value_station, satellite_type, DF_PR_WEIGHT);
 
                 ceres::CostFunction* cost_function =
                     new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, val_num>(functor);
@@ -185,25 +191,29 @@ int main(int argc, char** argv) {
                     !check_sv_data(sv_pos_data[epoch][satellite]) && 
                     !check_sv_data(sv_pos_data[epoch-1][satellite])){
 
-                    //Add TDCP Factor
-                    factor::TDCPFactorCostFunctor* functor = 
-                        new factor::TDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
-                                                          curr_ph_value - prev_ph_value,
-                                                          satellite_type, TDCP_WEIGHT / tdcp_cnt);
+                    // //Add TDCP Factor
+                    // factor::TDCPFactorCostFunctor* functor = 
+                    //     new factor::TDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
+                    //                                       curr_ph_value - prev_ph_value,
+                    //                                       satellite_type, TDCP_WEIGHT / tdcp_cnt);
 
-                    ceres::CostFunction* cost_function = 
-                        new ceres::AutoDiffCostFunction<factor::TDCPFactorCostFunctor, 1, val_num, val_num>(functor);
+                    // ceres::CostFunction* cost_function = 
+                    //     new ceres::AutoDiffCostFunction<factor::TDCPFactorCostFunctor, 1, val_num, val_num>(functor);
 
-                    problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                    // problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
                 }
+            }
+        }
 
-                //Add Constant Clock Bias Factor
-                factor::ConstantClockBiasFactorCostFunctor* functor = 
-                        new factor::ConstantClockBiasFactorCostFunctor(satellite_type, CONSATANT_CLOCK_WEIGHT / clock_const_cnt);
+        if (epoch > start_epoch){
+            for(int i=4; i<7; i++){
+            // //Add Constant Clock Bias Factor
+            //     factor::ConstantClockBiasFactorCostFunctor* functor = 
+            //             new factor::ConstantClockBiasFactorCostFunctor(i ,CONSATANT_CLOCK_WEIGHT / clock_const_cnt);
 
-                ceres::CostFunction* cost_function = 
-                    new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
-                problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+            //     ceres::CostFunction* cost_function = 
+            //         new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
+            //     problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
             }
         }
 
@@ -235,7 +245,7 @@ int main(int argc, char** argv) {
     for (size_t epoch = 0; epoch < state.size(); ++epoch) {
         double* position = state[epoch];
         std::cout << std::fixed << std::setprecision(6);
-        std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
+        // std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
         fout_ecef << epoch << ", " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
 
         std::vector<double> ecef_position = {position[0], position[1], position[2]};
