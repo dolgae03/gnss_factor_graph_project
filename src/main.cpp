@@ -2,8 +2,7 @@
 #include <iostream>
 #include <cmath>
 #include <vector>
-
-using namespace std;
+#include <boost/program_options.hpp>
 
 #include <iomanip>
 #include <iostream>
@@ -18,10 +17,12 @@ using namespace std;
 #include "../include/csv_utils.h"
 #include "../include/cord_utils.h"
 
+using namespace std;
+namespace po = boost::program_options;
 
 #define DF_PR_WEIGHT (double)1.0
-#define TDCP_WEIGHT (double)1.0
-#define CONSATANT_CLOCK_WEIGHT (double)1.0
+#define TDCP_WEIGHT (double)1.0e-4
+#define CONSATANT_CLOCK_WEIGHT (double)1.0e-5
 
 
 template <typename T>
@@ -33,13 +34,47 @@ bool check_sv_data(T vector){
     return false;
 }
 
+bool parseCommandLineOptions(int argc, char* argv[], 
+                             bool& use_df_pr, 
+                             bool& use_tdcp, 
+                             bool& use_clock_const, 
+                             double& df_pr_weight, 
+                             double& tdcp_weight, 
+                             double& clock_const_weight,
+                             size_t& start_epoch,
+                             size_t& T) {
+    try {
+        po::options_description desc("Allowed options");
+        desc.add_options()
+            ("help", "produce help message")
+            ("disable-df-pr", po::bool_switch(&use_df_pr)->default_value(true), "Disable DF-PR")
+            ("disable-tdcp", po::bool_switch(&use_tdcp)->default_value(true), "Disable TDCP")
+            ("disable-clock-const", po::bool_switch(&use_clock_const)->default_value(true), "Disable Clock Const")
+            ("df-pr-weight", po::value<double>(&df_pr_weight)->default_value(DF_PR_WEIGHT), "Set DF-PR weight")
+            ("tdcp-weight", po::value<double>(&tdcp_weight)->default_value(TDCP_WEIGHT), "Set TDCP weight")
+            ("clock-const-weight", po::value<double>(&clock_const_weight)->default_value(CONSATANT_CLOCK_WEIGHT), "Set Clock Const weight");
+
+        po::variables_map vm;
+        po::store(po::parse_command_line(argc, argv, desc), vm);
+        po::notify(vm);
+
+        if (vm.count("help")) {
+            std::cout << desc << "\n";
+            return false;  // 도움말 출력 후 false 반환
+        }
+
+    } catch (const po::error& e) {
+        std::cerr << "Error: " << e.what() << "\n";
+        return false;
+    }
+
+    return true;
+}
+
 
 int main(int argc, char** argv) {
     std::string rover_dir = "../data/data_rover/";
     std::string station_dir = "../data/data_station/";
-    std::string log_file_ecef = "../result/pos_ecef.csv";
-    std::string log_file_llh = "../result/pos_llh.csv";
-    std::string log_file_cov = "../result/error_cov.csv";
 
     std::string pr_file = "pr.csv";
     std::string ph_file = "carrier.csv";
@@ -62,9 +97,40 @@ int main(int argc, char** argv) {
     std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
     std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(station_dir + time_file);
 
-    std::filesystem::path dir = "../result";
+    // std::filesystem::path dir = "../result";
+    // std::filesystem::create_directory("../result");
 
-    std::filesystem::create_directory("../result");
+    std::string log_file_ecef = "../result/pos_ecef.csv";
+    std::string log_file_llh = "../result/pos_llh.csv";
+    std::string log_file_cov = "../result/error_cov.csv";
+
+
+    bool use_df_pr = true;
+    bool use_tdcp = true;
+    bool use_clock_const = true;
+
+    double df_pr_weight = DF_PR_WEIGHT;
+    double tdcp_weight = TDCP_WEIGHT;
+    double clock_const_weight = CONSATANT_CLOCK_WEIGHT;
+
+    size_t start_epoch = 600 - 1;
+    size_t T = 40;
+
+    if (!parseCommandLineOptions(argc, argv, use_df_pr, use_tdcp, use_clock_const, df_pr_weight, tdcp_weight, clock_const_weight, start_epoch, T)) {
+        return EXIT_FAILURE;  // 옵션 파싱 실패 또는 도움말 출력 시 프로그램 종료
+    }
+
+    // 프로그램 로직이 여기에 들어갑니다.
+    // 예시 출력
+    std::cout << "DF-PR enabled: " << std::boolalpha << use_df_pr << "\n";
+    std::cout << "TDCP enabled: " << std::boolalpha << use_tdcp << "\n";
+    std::cout << "Clock Const enabled: " << std::boolalpha << use_clock_const << "\n";
+    std::cout << "DF-PR weight: " << df_pr_weight << "\n";
+    std::cout << "TDCP weight: " << tdcp_weight << "\n";
+    std::cout << "Clock Const weight: " << clock_const_weight << "\n";
+    std::cout << "Start epoch: " << start_epoch << "\n";
+    std::cout << "T: " << T << "\n";
+
 
     // log results
     std::ofstream fout_ecef(log_file_ecef);
@@ -84,8 +150,6 @@ int main(int argc, char** argv) {
     std::vector<double> ref_location = {-3.119992580788137e+06, 4.086868171897103e+06, 3.761594895585738e+06};
 
     const size_t val_num = 6; // x, y ,z, t_gps, t_glo,
-    const size_t start_epoch = 0;
-    const size_t T = 1000;
     const size_t max_epoch = start_epoch + T; 
 
     double* previous_position = nullptr;
@@ -140,7 +204,6 @@ int main(int argc, char** argv) {
     }
 
 
-
     std::cout << DF_PR_WEIGHT / df_pr_cnt << " " << TDCP_WEIGHT / tdcp_cnt << " " << CONSATANT_CLOCK_WEIGHT / clock_const_cnt << std::endl;
 
     for(size_t epoch=start_epoch; epoch <= max_epoch; ++epoch){
@@ -175,8 +238,8 @@ int main(int argc, char** argv) {
             if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
                 factor::DiffPesudorangeFactorCostFunctor* functor = 
                     new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
-                                                                pr_value-pr_value_station, satellite_type, DF_PR_WEIGHT);
-
+                                                                pr_value-pr_value_station, satellite_type, DF_PR_WEIGHT / df_pr_cnt);
+ 
                 ceres::CostFunction* cost_function =
                     new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, val_num>(functor);
 
