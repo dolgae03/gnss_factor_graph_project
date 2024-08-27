@@ -3,6 +3,7 @@
 #include <cmath>
 #include <vector>
 #include <boost/program_options.hpp>
+#include <boost/filesystem.hpp>
 
 #include <iomanip>
 #include <iostream>
@@ -12,6 +13,8 @@
 #include <string>
 #include <utility>
 #include <stdexcept>
+#include <map>
+
 #include "ceres/ceres.h"
 #include "../include/factors.h"
 #include "../include/csv_utils.h"
@@ -19,6 +22,8 @@
 
 using namespace std;
 namespace po = boost::program_options;
+namespace fs = boost::filesystem;
+
 
 #define DF_PR_WEIGHT (double)1.0
 #define TDCP_WEIGHT (double)1.0e-4
@@ -42,17 +47,26 @@ bool parseCommandLineOptions(int argc, char* argv[],
                              double& tdcp_weight, 
                              double& clock_const_weight,
                              size_t& start_epoch,
-                             size_t& T) {
+                             size_t& T,
+                             std::set<int>& constellation_type,
+                             std::string& constellation_name) {
     try {
+        std::vector<std::string> constellations;
+
         po::options_description desc("Allowed options");
         desc.add_options()
             ("help", "produce help message")
-            ("disable-df-pr", po::bool_switch(&use_df_pr)->default_value(true), "Disable DF-PR")
-            ("disable-tdcp", po::bool_switch(&use_tdcp)->default_value(true), "Disable TDCP")
-            ("disable-clock-const", po::bool_switch(&use_clock_const)->default_value(true), "Disable Clock Const")
+            ("disable-df-pr", po::value<bool>(&use_df_pr)->default_value(true)->implicit_value(false), "Disable DF-PR")
+            ("disable-tdcp", po::value<bool>(&use_tdcp)->default_value(true)->implicit_value(false), "Disable TDCP")
+            ("disable-clock-const", po::value<bool>(&use_clock_const)->default_value(true)->implicit_value(false), "Disable Clock Const")
             ("df-pr-weight", po::value<double>(&df_pr_weight)->default_value(DF_PR_WEIGHT), "Set DF-PR weight")
             ("tdcp-weight", po::value<double>(&tdcp_weight)->default_value(TDCP_WEIGHT), "Set TDCP weight")
-            ("clock-const-weight", po::value<double>(&clock_const_weight)->default_value(CONSATANT_CLOCK_WEIGHT), "Set Clock Const weight");
+            ("clock-const-weight", po::value<double>(&clock_const_weight)->default_value(CONSATANT_CLOCK_WEIGHT), "Set Clock Const weight")
+            ("start-epoch", po::value<size_t>(&start_epoch)->default_value(600), "Set start epoch (default 599)")
+            ("T", po::value<size_t>(&T)->default_value(40), "Set T value (default 40)")
+            ("constellations", po::value<std::vector<std::string>>(&constellations)->multitoken()->default_value(std::vector<std::string>{"gps"}, "gps"), 
+                "Set GPS constellations (gps, bds, gal)");
+
 
         po::variables_map vm;
         po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -63,6 +77,36 @@ bool parseCommandLineOptions(int argc, char* argv[],
             return false;  // 도움말 출력 후 false 반환
         }
 
+        start_epoch = start_epoch - 1;
+        std::sort(constellations.begin(), constellations.end());
+
+        std::map<std::string, int> gps_constellation_map = {
+            {"gps", 0},
+            {"bds", 1},
+            {"gal", 2}
+        };
+        
+        constellation_name = constellations[0];
+        for (size_t i = 0; i < constellations.size(); ++i) {
+            if (i > 0) {
+                constellation_name += "_" + constellations[i];
+            }
+            
+            int value = gps_constellation_map.at(constellations[i]);
+            std::cout << "Processing constellation value: " << value << std::endl;
+
+            // Check for duplicates
+            if (constellation_type.find(value) != constellation_type.end()) {
+                std::cerr << "Error: Constellation is duplicated" << std::endl;
+                return false;
+            }
+
+            constellation_type.insert(value);
+        }
+
+    } catch (const std::out_of_range& e) {
+        std::cerr << "Error: Key not found in map - " << e.what() << std::endl;
+        return false;
     } catch (const po::error& e) {
         std::cerr << "Error: " << e.what() << "\n";
         return false;
@@ -97,28 +141,25 @@ int main(int argc, char** argv) {
     std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
     std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(station_dir + time_file);
 
-    // std::filesystem::path dir = "../result";
-    // std::filesystem::create_directory("../result");
+    /*Define Input Factor*/
 
-    std::string log_file_ecef = "../result/pos_ecef.csv";
-    std::string log_file_llh = "../result/pos_llh.csv";
-    std::string log_file_cov = "../result/error_cov.csv";
+    bool use_df_pr, use_tdcp, use_clock_const;
+    double df_pr_weight, tdcp_weight, clock_const_weight;
 
+    size_t start_epoch, T;
 
-    bool use_df_pr = true;
-    bool use_tdcp = true;
-    bool use_clock_const = true;
+    std::set<int> constellation_type;
+    std::string constellation_name;
 
-    double df_pr_weight = DF_PR_WEIGHT;
-    double tdcp_weight = TDCP_WEIGHT;
-    double clock_const_weight = CONSATANT_CLOCK_WEIGHT;
-
-    size_t start_epoch = 600 - 1;
-    size_t T = 40;
-
-    if (!parseCommandLineOptions(argc, argv, use_df_pr, use_tdcp, use_clock_const, df_pr_weight, tdcp_weight, clock_const_weight, start_epoch, T)) {
+    if (!parseCommandLineOptions(argc, argv, 
+                                use_df_pr, use_tdcp, use_clock_const, 
+                                df_pr_weight, tdcp_weight, clock_const_weight, 
+                                start_epoch, T,
+                                constellation_type, constellation_name)) {
         return EXIT_FAILURE;  // 옵션 파싱 실패 또는 도움말 출력 시 프로그램 종료
     }
+
+    
 
     // 프로그램 로직이 여기에 들어갑니다.
     // 예시 출력
@@ -131,6 +172,37 @@ int main(int argc, char** argv) {
     std::cout << "Start epoch: " << start_epoch << "\n";
     std::cout << "T: " << T << "\n";
 
+    std::cout << "Constellation types: ";
+    for (auto& type : constellation_type) {
+        std::cout << type << " ";
+    }
+    std::cout << "\n";
+
+    // 폴더 이름을 start_epoch, T, df_pr_weight, tdcp_weight, clock_const_weight, gps_type, gps_constellations로 구성
+    std::string folder_name = "../result/" + constellation_name + "/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
+
+    if (use_df_pr)
+        folder_name += "_dfpr_" + std::to_string(df_pr_weight);
+    
+    if (use_tdcp)
+        folder_name += "_tdcp_" + std::to_string(tdcp_weight);
+    
+    if (use_clock_const)
+        folder_name += "_clockconst_" + std::to_string(clock_const_weight);
+
+
+    // 폴더 생성
+    if (!fs::exists(folder_name)) {
+        if (!fs::create_directories(folder_name)) {
+            std::cerr << "Error: Could not create directory " << folder_name << std::endl;
+            return EXIT_FAILURE;
+        }
+    }
+
+    // 로그 파일 경로
+    std::string log_file_ecef = folder_name + "/pos_ecef.csv";
+    std::string log_file_llh = folder_name + "/pos_llh.csv";
+    std::string log_file_cov = folder_name + "/error_cov.csv";
 
     // log results
     std::ofstream fout_ecef(log_file_ecef);
@@ -151,6 +223,7 @@ int main(int argc, char** argv) {
 
     const size_t val_num = 6; // x, y ,z, t_gps, t_glo,
     const size_t max_epoch = start_epoch + T; 
+
 
     double* previous_position = nullptr;
     double* current_position = nullptr;
@@ -177,7 +250,7 @@ int main(int argc, char** argv) {
             else
                 assert(false);
 
-            if(satellite_type > 2)
+            if(constellation_type.find(satellite_type) == constellation_type.end())
                 continue;
 
             if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
@@ -228,14 +301,14 @@ int main(int argc, char** argv) {
             else
                 assert(false);
 
-            if(satellite_type > 2)
+            if(constellation_type.find(satellite_type) == constellation_type.end())
                 continue;
 
             double pr_value = pr_data[epoch][satellite];
             double pr_value_station = pr_data_station[epoch][satellite];
             double next_dop_value = dop_data[epoch][satellite];
 
-            if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
+            if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
                 factor::DiffPesudorangeFactorCostFunctor* functor = 
                     new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
                                                                 pr_value-pr_value_station, satellite_type, DF_PR_WEIGHT / df_pr_cnt);
@@ -246,7 +319,8 @@ int main(int argc, char** argv) {
                 problem.AddResidualBlock(cost_function, nullptr, current_position);
             }
 
-            if(epoch > start_epoch){
+            if(use_tdcp &&
+                epoch > start_epoch){
                 double prev_ph_value = ph_data[epoch-1][satellite];
                 double curr_ph_value = ph_data[epoch][satellite];
 
@@ -269,7 +343,8 @@ int main(int argc, char** argv) {
             }
         }
 
-        if (epoch > start_epoch){
+        if (use_clock_const &&
+            epoch > start_epoch){
             for(int i=4; i<7; i++){
             // Add Constant Clock Bias Factor
                 factor::ConstantClockBiasFactorCostFunctor* functor = 

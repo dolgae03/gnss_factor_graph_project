@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.5)
 project(ceres_solver_gnss)
 
 find_package(Ceres REQUIRED)
-find_package(Boost REQUIRED COMPONENTS program_options)
+find_package(Boost REQUIRED COMPONENTS program_options filesystem)
 
 # Boost include 디렉토리 설정
 include_directories(${Boost_INCLUDE_DIRS})
