@@ -277,8 +277,6 @@ int main(int argc, char** argv) {
     }
 
 
-    std::cout << DF_PR_WEIGHT / df_pr_cnt << " " << TDCP_WEIGHT / tdcp_cnt << " " << CONSATANT_CLOCK_WEIGHT / clock_const_cnt << std::endl;
-
     for(size_t epoch=start_epoch; epoch <= max_epoch; ++epoch){
         previous_position = current_position;
         current_position = new double[val_num];
@@ -311,7 +309,7 @@ int main(int argc, char** argv) {
             if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
                 factor::DiffPesudorangeFactorCostFunctor* functor = 
                     new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
-                                                                pr_value-pr_value_station, satellite_type, DF_PR_WEIGHT / df_pr_cnt);
+                                                                pr_value-pr_value_station, satellite_type, df_pr_weight / df_pr_cnt);
  
                 ceres::CostFunction* cost_function =
                     new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, val_num>(functor);
@@ -333,7 +331,7 @@ int main(int argc, char** argv) {
                     factor::TDCPFactorCostFunctor* functor = 
                         new factor::TDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
                                                           curr_ph_value - prev_ph_value,
-                                                          satellite_type, TDCP_WEIGHT / tdcp_cnt);
+                                                          satellite_type, tdcp_weight / tdcp_cnt);
 
                     ceres::CostFunction* cost_function = 
                         new ceres::AutoDiffCostFunction<factor::TDCPFactorCostFunctor, 1, val_num, val_num>(functor);
@@ -348,7 +346,7 @@ int main(int argc, char** argv) {
             for(int i=4; i<7; i++){
             // Add Constant Clock Bias Factor
                 factor::ConstantClockBiasFactorCostFunctor* functor = 
-                        new factor::ConstantClockBiasFactorCostFunctor(i ,CONSATANT_CLOCK_WEIGHT / clock_const_cnt);
+                        new factor::ConstantClockBiasFactorCostFunctor(i, clock_const_weight / clock_const_cnt);
 
                 ceres::CostFunction* cost_function = 
                     new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
