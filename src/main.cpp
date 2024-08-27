@@ -291,16 +291,18 @@ int main(int argc, char** argv) {
             if (satellite < 32) // GPS
                 satellite_type = 0;
             else if(satellite < 59) //GLO
-                satellite_type = 4;
+                satellite_type = 3;
             else if (satellite < 95) // GAL
-                satellite_type = 1;
-            else if (satellite < 158) // BDS
                 satellite_type = 2;
+            else if (satellite < 158) // BDS
+                satellite_type = 1;
             else
                 assert(false);
 
-            if(constellation_type.find(satellite_type) == constellation_type.end())
+            if(constellation_type.find(satellite_type) == constellation_type.end()){
                 continue;
+            }
+            
 
             double pr_value = pr_data[epoch][satellite];
             double pr_value_station = pr_data_station[epoch][satellite];
