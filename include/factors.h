@@ -255,15 +255,15 @@ public:
         T g = T(0);
 
         for (int i = 0; i < 3; ++i) {
-            D += los_vector_curr[i] * T(sv_position_curr_[i]) - los_vector_prev[i] * T(sv_position_prev_rot[i]);
-            g += los_vector_curr[i] * curr_state[i] - los_vector_prev[i] * prev_state[i];
+            D += los_vector_curr[i] * T(sv_position_curr_rot[i]) - los_vector_prev[i] * T(sv_position_prev_rot[i]);
+            g += los_vector_curr[i] * prev_state[i] - los_vector_prev[i] * prev_state[i];
         }
 
         T tdcp_pred = T(c) * (curr_state[3 + satellite_type_] - prev_state[3 + satellite_type_]);
         for (int i = 0; i < 3; ++i)
             tdcp_pred += -los_vector_curr[i] * (curr_state[i] - prev_state[i]);
 
-        T tdcp_measure = (L1_frequency / T(c) * T(pseudorange_)) - (D - g);
+        T tdcp_measure = (T(c) / L1_frequency) * T(pseudorange_) - (D - g);
 
         residual[0] = (tdcp_pred - tdcp_measure) * T(weight_);
 
