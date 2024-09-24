@@ -27,23 +27,22 @@ double GetL1Frequency(int satellite_type) {
     }
 }
 
-template <typename T>
-void RotateSatellitePosition(const T* user_state,
+void RotateSatellitePosition(const std::vector<double>& user_position,
                                 const std::vector<double>& satellite_position,
-                                T* satellite_position_rot) {
+                                const std::vector<double>& satellite_position_rot) {
     const double c = 299792458.0; // Speed of light in m/s
     const double omega = 7.2921151467e-5; // Earth's rotation rate in rad/s
 
-    T diff_vector[3];
+    double diff_vector[3];
     for (int i = 0; i < 3; ++i) {
         diff_vector[i] = T(satellite_position[i]) - user_state[i];
     }
 
-    T norm = ceres::sqrt(diff_vector[0] * diff_vector[0] +
+    double norm = sqrt(diff_vector[0] * diff_vector[0] +
                             diff_vector[1] * diff_vector[1] +
                             diff_vector[2] * diff_vector[2]);
 
-    T C[3][3] = {
+    double C[3][3] = {
         {T(1), T(omega) * norm / T(c), T(0)},
         {T(-omega) * norm / T(c), T(1), T(0)},
         {T(0), T(0), T(1)}
@@ -52,18 +51,18 @@ void RotateSatellitePosition(const T* user_state,
     for(int i=0; i<3; i++){
         satellite_position_rot[i] = T(0);
         for(int j=0; j<3; j++){
-            satellite_position_rot[i] += C[i][j] * T(satellite_position[j]);
+            satellite_position_rot[i] += C[i][j] * satellite_position[j];
         }
     }
 }
 
 template <typename T>
 void CalculateLOS(const T* user_state,
-                const T* satellite_position,
+                const std::vector<double>& satellite_position,
                 T* los_vector) {
     T diff_vector[3];
     for (int i = 0; i < 3; ++i) {
-        diff_vector[i] = satellite_position[i] - user_state[i];
+        diff_vector[i] = T(satellite_position[i]) - user_state[i];
     }
 
     T norm = ceres::sqrt(diff_vector[0] * diff_vector[0] +
@@ -241,10 +240,24 @@ public:
 
         T L1_frequency = T(GetL1Frequency(satellite_type_));  // L1 signal frequency in Hz
 
-        T sv_position_prev_rot[3];
-        T sv_position_curr_rot[3];
-        RotateSatellitePosition(prev_state, sv_position_prev_, sv_position_prev_rot);
-        RotateSatellitePosition(curr_state, sv_position_curr_, sv_position_curr_rot);
+        double sv_position_prev_rot[3];
+        double sv_position_curr_rot[3];
+
+        // Declare vectors
+        std::vector<double> prev_position(3);
+        std::vector<double> curr_position(3);
+
+        // Populate the vectors
+        prev_position[0] = static_cast<double>(prev_state[0]);
+        prev_position[1] = static_cast<double>(prev_state[1]);
+        prev_position[2] = static_cast<double>(prev_state[2]);
+
+        curr_position[0] = static_cast<double>(curr_state[0]);
+        curr_position[1] = static_cast<double>(curr_state[1]);
+        curr_position[2] = static_cast<double>(curr_state[2]);
+
+        RotateSatellitePosition(prev_position, sv_position_prev_, sv_position_prev_rot);
+        RotateSatellitePosition(curr_position, sv_position_curr_, sv_position_curr_rot);
 
         T los_vector_prev[3];
         T los_vector_curr[3];
