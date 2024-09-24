@@ -44,9 +44,9 @@ void RotateSatellitePosition(const T* user_state,
                             diff_vector[2] * diff_vector[2]);
 
     T C[3][3] = {
-        {T(1), T(omega) * norm / T(c), T(0)},
-        {T(-omega) * norm / T(c), T(1), T(0)},
-        {T(0), T(0), T(1)}
+        {T(1),                    T(omega) * norm / T(c), T(0)},
+        {T(-omega) * norm / T(c), T(1)                  , T(0)},
+        {T(0)                   , T(0)                  , T(1)}
     };
 
     for(int i=0; i<3; i++){
@@ -70,9 +70,8 @@ void CalculateLOS(const T* user_state,
                         diff_vector[1] * diff_vector[1] +
                         diff_vector[2] * diff_vector[2]);
 
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i) 
         los_vector[i] = diff_vector[i] / norm;
-    }
 }
 
 namespace factor {
@@ -98,7 +97,7 @@ class ConstantClockBiasFactorCostFunctor {
 
 
 class DiffPesudorangeFactorCostFunctor {
-    public:
+   public:
         DiffPesudorangeFactorCostFunctor(const std::vector<double>& ref_position, const std::vector<double>& sv_position, double pesudorange, int satellite_type, double weight)
             : ref_position_(ref_position), sv_position_(sv_position), pesudorange_(pesudorange), satellite_type_(satellite_type), weight_(weight) {}
 
@@ -107,51 +106,23 @@ class DiffPesudorangeFactorCostFunctor {
             const double c = 299792458.0; // Speed of light in m/s
             const double omega = 7.2921151467e-5; // Earth's rotation rate in rad/s
 
-            // State parameters
-            T rx = state[0];
-            T ry = state[1];
-            T rz = state[2];
+            T rotated_sv_pos[3];
+            RotateSatellitePosition(state, sv_position_, rotated_sv_pos);
+            
+            T range_to_sv = T(0);
+            for(int i=0; i<3; i++)
+                range_to_sv += (state[i] - rotated_sv_pos[i]) * (state[i] - rotated_sv_pos[i]);
+
             T clock_bias = state[3 + satellite_type_] * T(c);
+            range_to_sv = ceres::sqrt(range_to_sv) + clock_bias;
 
-            // Reference position
-            T ref_x = T(ref_position_[0]);
-            T ref_y = T(ref_position_[1]);
-            T ref_z = T(ref_position_[2]);
 
-            // Satellite position
-            T sx = T(sv_position_[0]);
-            T sy = T(sv_position_[1]);
-            T sz = T(sv_position_[2]);
+            T range_to_ref = T(0);
+            for(int i=0; i<3; i++)
+                range_to_ref += (T(ref_position_[i]) - rotated_sv_pos[i]) * (T(ref_position_[i])  - rotated_sv_pos[i]);
 
-            // Approximate range to reference position
-            T approx_r0_x = sx - ref_x;
-            T approx_r0_y = sy - ref_y;
-            T approx_r0_z = sz - ref_z;
-            T approx_range0 = ceres::sqrt(approx_r0_x * approx_r0_x + approx_r0_y * approx_r0_y + approx_r0_z * approx_r0_z);
+            range_to_ref = ceres::sqrt(range_to_ref);
 
-            // Rotation matrix C
-            T C[3][3] = {
-                {T(1), T(omega) * approx_range0 / T(c), T(0)},
-                {T(-omega) * approx_range0 / T(c), T(1), T(0)},
-                {T(0), T(0), T(1)}
-            };
-
-            // Rotate satellite position
-            T r_sx = C[0][0] * sx + C[0][1] * sy + C[0][2] * sz;
-            T r_sy = C[1][0] * sx + C[1][1] * sy + C[1][2] * sz;
-            T r_sz = C[2][0] * sx + C[2][1] * sy + C[2][2] * sz;
-
-            T dx = rx - r_sx;
-            T dy = ry - r_sy;
-            T dz = rz - r_sz;
-            T range_to_sv = ceres::sqrt(dx * dx + dy * dy + dz * dz) + clock_bias;
-
-            T dref_x = ref_x - r_sx;
-            T dref_y = ref_y - r_sy;
-            T dref_z = ref_z - r_sz;
-            T range_to_ref = ceres::sqrt(dref_x * dref_x + dref_y * dref_y + dref_z * dref_z);
-
-            // Differential pseudorange
             T estimated_pr_diff = range_to_sv - range_to_ref;
 
             residual[0] = (T(pesudorange_) - estimated_pr_diff) * T(weight_);
@@ -260,10 +231,10 @@ public:
         }
 
         T tdcp_pred = T(c) * (curr_state[3 + satellite_type_] - prev_state[3 + satellite_type_]);
-        for (int i = 0; i < 3; ++i)
-            tdcp_pred += -los_vector_curr[i] * (curr_state[i] - prev_state[i]);
+        for (int i = 0; i < 3; ++i) //
+            tdcp_pred += T(-1.0) * los_vector_curr[i] * (curr_state[i] - prev_state[i]);
 
-        T tdcp_measure = (T(c) / L1_frequency) * T(pseudorange_) - (D - g);
+        T tdcp_measure = (T(c) / L1_frequency) * T(pseudorange_) - D + g;
 
         residual[0] = (tdcp_pred - tdcp_measure) * T(weight_);
 

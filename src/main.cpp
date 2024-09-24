@@ -29,6 +29,30 @@ namespace fs = boost::filesystem;
 #define TDCP_WEIGHT (double)1.0e-4
 #define CONSATANT_CLOCK_WEIGHT (double)1.0e-5
 
+std::string rover_dir = "../data/data_rover/";
+std::string station_dir = "../data/data_station/";
+
+std::string pr_file = "pr.csv";
+std::string ph_file = "carrier.csv";
+std::string dop_file = "dop.csv";
+std::string sv_pos_file = "sv_pos.csv";
+std::string sv_vel_file = "sv_vel.csv";
+std::string time_file = "time.csv";
+
+// CSV 파일 읽기
+std::vector<std::vector<double>> pr_data = readPseudorangeCSV(rover_dir + pr_file);
+std::vector<std::vector<double>> ph_data = readPseudorangeCSV(rover_dir + ph_file);
+std::vector<std::vector<double>> dop_data = readPseudorangeCSV(rover_dir + dop_file);
+std::vector<std::vector<std::vector<double>>> sv_pos_data = readSVPosAndVelCSV(rover_dir + sv_pos_file);
+std::vector<std::vector<std::vector<double>>> sv_vel_data = readSVPosAndVelCSV(rover_dir + sv_vel_file);
+std::vector<std::pair<int, double>> time_data = readGpsTimeCSV(rover_dir + time_file);
+
+std::vector<std::vector<double>> pr_data_station = readPseudorangeCSV(station_dir + pr_file);
+std::vector<std::vector<double>> dop_data_station = readPseudorangeCSV(station_dir + dop_file);
+std::vector<std::vector<std::vector<double>>> sv_pos_data_station = readSVPosAndVelCSV(station_dir + sv_pos_file);
+std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
+std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(station_dir + time_file);
+
 
 template <typename T>
 bool check_sv_data(T vector){
@@ -115,32 +139,58 @@ bool parseCommandLineOptions(int argc, char* argv[],
     return true;
 }
 
+void calculate_factor_count(size_t& epoch, std::set<int>& constellation_type,
+                            bool is_first, size_t& df_pr_cnt, size_t& tdcp_cnt, size_t& clock_const_cnt){
+    for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
+        int satellite_type;
+
+        if (satellite < 32) // GPS
+            satellite_type = 0;
+        else if(satellite < 59) //GLO
+            satellite_type = 3;
+        else if (satellite < 95) // GAL
+            satellite_type = 2;
+        else if (satellite < 158) // BDS
+            satellite_type = 1;
+        else
+            assert(false);
+
+        if(constellation_type.find(satellite_type) == constellation_type.end()){
+            continue;   
+        }
+
+        double pr_value = pr_data[epoch][satellite];
+        double pr_value_station = pr_data_station[epoch][satellite];
+        double next_dop_value = dop_data[epoch][satellite];
+
+        if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && 
+            !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
+            df_pr_cnt += 1;
+        }
+
+        if(!is_first){
+            double prev_ph_value = ph_data[epoch-1][satellite];
+            double curr_ph_value = ph_data[epoch][satellite];
+
+            if (!std::isnan(prev_ph_value) && 
+                !std::isnan(curr_ph_value) &&
+                !check_sv_data(sv_pos_data[epoch][satellite]) && 
+                !check_sv_data(sv_pos_data[epoch-1][satellite])){
+
+                tdcp_cnt += 1;
+            }
+        }
+    }
+
+    if (!is_first){
+        for(int i=4; i<7; i++){
+            clock_const_cnt += 1;
+        }
+    }
+}
+
 
 int main(int argc, char** argv) {
-    std::string rover_dir = "../data/data_rover/";
-    std::string station_dir = "../data/data_station/";
-
-    std::string pr_file = "pr.csv";
-    std::string ph_file = "carrier.csv";
-    std::string dop_file = "dop.csv";
-    std::string sv_pos_file = "sv_pos.csv";
-    std::string sv_vel_file = "sv_vel.csv";
-    std::string time_file = "time.csv";
-
-    // CSV 파일 읽기
-    std::vector<std::vector<double>> pr_data = readPseudorangeCSV(rover_dir + pr_file);
-    std::vector<std::vector<double>> ph_data = readPseudorangeCSV(rover_dir + ph_file);
-    std::vector<std::vector<double>> dop_data = readPseudorangeCSV(rover_dir + dop_file);
-    std::vector<std::vector<std::vector<double>>> sv_pos_data = readSVPosAndVelCSV(rover_dir + sv_pos_file);
-    std::vector<std::vector<std::vector<double>>> sv_vel_data = readSVPosAndVelCSV(rover_dir + sv_vel_file);
-    std::vector<std::pair<int, double>> time_data = readGpsTimeCSV(rover_dir + time_file);
-
-    std::vector<std::vector<double>> pr_data_station = readPseudorangeCSV(station_dir + pr_file);
-    std::vector<std::vector<double>> dop_data_station = readPseudorangeCSV(station_dir + dop_file);
-    std::vector<std::vector<std::vector<double>>> sv_pos_data_station = readSVPosAndVelCSV(station_dir + sv_pos_file);
-    std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
-    std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(station_dir + time_file);
-
     /*Define Input Factor*/
 
     bool use_df_pr, use_tdcp, use_clock_const;
@@ -224,66 +274,48 @@ int main(int argc, char** argv) {
     const size_t val_num = 6; // x, y ,z, t_gps, t_glo,
     const size_t max_epoch = start_epoch + T; 
 
-
     double* previous_position = nullptr;
     double* current_position = nullptr;
 
-    size_t tdcp_cnt = 0, df_pr_cnt = 0, clock_const_cnt = 0;
+    // Solver 옵션 설정 및 실행
+    ceres::Solver::Summary summary;
 
-    //Calculate Weight
-    for(size_t epoch=start_epoch; epoch <= max_epoch; ++epoch){
-        for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
-            double pr_value = pr_data[epoch][satellite];
-            double pr_value_station = pr_data_station[epoch][satellite];
-            double next_dop_value = dop_data[epoch][satellite];
+    ceres::Solver::Options options;
+    options.minimizer_type = ceres::LINE_SEARCH;
+    options.linear_solver_type = ceres::DENSE_QR;
+    options.minimizer_progress_to_stdout = true;
+    options.gradient_tolerance = 1e-12;
+    options.parameter_tolerance = 1e-14;  // StepTolerance와 TolX가 동시에 적용되는 경우
+    options.function_tolerance = 1e-12;
+    options.gradient_check_numeric_derivative_relative_step_size = 1e-10;
+    options.max_num_iterations = 1e+4;
 
-            int satellite_type;
+    std::string option_err;
+    if(!options.IsValid(&option_err)){
+        cout << option_err<< endl;
 
-            if (satellite < 32) // GPS
-                satellite_type = 0;
-            else if(satellite < 59) //GLO
-                satellite_type = 4;
-            else if (satellite < 95) // GAL
-                satellite_type = 1;
-            else if (satellite < 158) // BDS
-                satellite_type = 2;
-            else
-                assert(false);
-
-            if(constellation_type.find(satellite_type) == constellation_type.end())
-                continue;
-
-            if (!std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
-                df_pr_cnt += 1;
-            }
-
-            if(epoch > start_epoch){
-                double prev_dop_value = dop_data[epoch-1][satellite]; // Hz
-
-                double prev_ph_value = ph_data[epoch-1][satellite];
-                double curr_ph_value = ph_data[epoch][satellite];
-
-                if (!std::isnan(prev_ph_value) && 
-                    !std::isnan(curr_ph_value) &&
-                    !check_sv_data(sv_pos_data[epoch][satellite]) && 
-                    !check_sv_data(sv_pos_data[epoch-1][satellite])){
-
-                    tdcp_cnt += 1;
-                }
-            }
-        }
-        if(epoch > start_epoch)
-            clock_const_cnt += 3;
+        exit(0);
     }
-
 
     for(size_t epoch=start_epoch; epoch <= max_epoch; ++epoch){
         previous_position = current_position;
         current_position = new double[val_num];
-        std::fill(current_position, current_position + val_num, 0.0); 
 
-        for(int i=0; i<3; i++)
-            current_position[i] = ref_location[i];   
+        if (epoch != start_epoch){
+            // for(int i=0; i<3; i++)
+            //     current_position[i] = ref_location[i];  
+        } 
+        else{
+            std::fill(current_position, current_position + val_num, 0.0); 
+            // for(int i=0; i<3; i++)
+            //     current_position[i] = ref_location[i];  
+        }
+
+        size_t df_pr_cnt = 0, tdcp_cnt = 0, clock_const_cnt = 0;
+        calculate_factor_count(epoch, constellation_type,
+                               epoch == start_epoch, df_pr_cnt, tdcp_cnt, clock_const_cnt);
+
+        // cout << epoch << " " << df_pr_cnt << " " << tdcp_cnt << " " << clock_const_cnt << endl;
 
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
             int satellite_type;
@@ -299,11 +331,11 @@ int main(int argc, char** argv) {
             else
                 assert(false);
 
+
             if(constellation_type.find(satellite_type) == constellation_type.end()){
-                continue;
+                continue;   
             }
             
-
             double pr_value = pr_data[epoch][satellite];
             double pr_value_station = pr_data_station[epoch][satellite];
             double next_dop_value = dop_data[epoch][satellite];
@@ -318,6 +350,9 @@ int main(int argc, char** argv) {
 
                 problem.AddResidualBlock(cost_function, nullptr, current_position);
             }
+
+            // if(satellite == 13 || satellite == 18)
+            //     continue;
 
             if(use_tdcp &&
                 epoch > start_epoch){
@@ -357,19 +392,10 @@ int main(int argc, char** argv) {
         }
 
         state.push_back(current_position);
+        // ceres::Solve(options, &problem, &summary);
     }
-    // Solver 옵션 설정 및 실행
-    ceres::Solver::Options options;
-    options.minimizer_progress_to_stdout = true;
-    options.parameter_tolerance = 1e-12; // 더 엄격한 파라미터 수렴 조건
-    options.function_tolerance = 1e-12;  // 더 엄격한 함수 값 수렴 조건
-    options.gradient_tolerance = 1e-12;  // 더 엄격한 그라디언트 수렴 조건
-    options.max_num_iterations = 1000;   // 최대 반복 횟수 설정
 
-    options.minimizer_progress_to_stdout = true;
-    ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
-
     ceres::Covariance::Options cov_options;
     // cov_options.algorithm_type = ceres::DENSE_SVD;
     ceres::Covariance covariance(cov_options);

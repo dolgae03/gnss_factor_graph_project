@@ -5,6 +5,9 @@ project(ceres_solver_gnss)
 find_package(Ceres REQUIRED)
 find_package(Boost REQUIRED COMPONENTS program_options filesystem)
 
+enable_testing()
+add_test(NAME run_tests COMMAND run_tests)
+
 # Boost include 디렉토리 설정
 include_directories(${Boost_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/include)
