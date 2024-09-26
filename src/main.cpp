@@ -189,8 +189,42 @@ void calculate_factor_count(size_t& epoch, std::set<int>& constellation_type,
     }
 }
 
+int test_one_factor() {
+
+    // Define satellite positions at previous and current epochs
+    std::vector<double> sv_position_prev = {-1.27378e+07, 2.32632e+07, 1.0749e+06 };        // Previous satellite position (ECEF coordinates in meters)
+    std::vector<double> sv_position_curr = {-1.27381e+07, 2.32632e+07 , 1.07173e+06 };     // Current satellite position (moved slightly in Y-axis)
+
+    double pseudorange = 2684.21;  // Pseudorange measurement in meters
+
+    int satellite_type = 0;  // GPS L1C
+    double weight = 0.909091;     // Weight of the measurement
+
+    // Create the cost functor
+    factor::TDCPFactorCostFunctor functor(sv_position_prev, sv_position_curr, pseudorange, satellite_type, weight);
+
+    // Define previous and current user states
+    // Assuming the user is at the origin at the previous state and has moved slightly in the X-axis
+    double prev_state[6] = {-3119984.7525596456, 4086868.4656001395, 3761601.4722899213, -0.0000000050, 0, 0};              // [x, y, z, clock_bias_GPS, clock_bias_GALILEO, clock_bias_Beidou]
+    double curr_state[6] = {-3119984.0802085600, 4086868.8650446292, 3761601.5717207277, -0.0000000055, 0, 0};          // Moved 10 meters in X, small clock bias change
+
+    // Define residual array
+    double residual[1];
+
+    // Call the operator()
+    functor(prev_state, curr_state, residual);
+
+    // Output the residual
+    std::cout << "Residual: " << residual[0] << std::endl;
+
+    return 0;
+}
+
 
 int main(int argc, char** argv) {
+    // test_one_factor();
+    // return -1;
+
     /*Define Input Factor*/
 
     bool use_df_pr, use_tdcp, use_clock_const;
@@ -281,14 +315,14 @@ int main(int argc, char** argv) {
     ceres::Solver::Summary summary;
 
     ceres::Solver::Options options;
-    options.minimizer_type = ceres::LINE_SEARCH;
-    options.linear_solver_type = ceres::DENSE_QR;
-    options.minimizer_progress_to_stdout = true;
-    options.gradient_tolerance = 1e-12;
-    options.parameter_tolerance = 1e-14;  // StepTolerance와 TolX가 동시에 적용되는 경우
-    options.function_tolerance = 1e-12;
-    options.gradient_check_numeric_derivative_relative_step_size = 1e-10;
-    options.max_num_iterations = 1e+4;
+    // options.minimizer_type = ceres::LINE_SEARCH;  // MATLAB의 'quasi-newton' 알고리즘과 대응
+    // options.line_search_direction_type = ceres::BFGS;  // BFGS 방법 사용
+    options.minimizer_progress_to_stdout = true;  // 'Display','iter-detailed'에 대응
+    options.gradient_tolerance = 1e-8;  // 'OptimalityTolerance'에 대응
+    options.parameter_tolerance = 1e-10;  // 'TolX'에 대응
+    options.function_tolerance = 1e-8;  // 'FunctionTolerance'에 대응
+    options.gradient_check_numeric_derivative_relative_step_size = 1e-10;  // 'FiniteDifferenceStepSize'에 대응
+    options.max_num_iterations = 1e+4;  // 'MaxIterations'에 대응
 
     std::string option_err;
     if(!options.IsValid(&option_err)){
@@ -297,19 +331,14 @@ int main(int argc, char** argv) {
         exit(0);
     }
 
-    for(size_t epoch=start_epoch; epoch <= max_epoch; ++epoch){
+    for(size_t epoch=start_epoch; epoch < max_epoch; ++epoch){
         previous_position = current_position;
         current_position = new double[val_num];
 
-        if (epoch != start_epoch){
-            // for(int i=0; i<3; i++)
-            //     current_position[i] = ref_location[i];  
-        } 
-        else{
-            std::fill(current_position, current_position + val_num, 0.0); 
-            // for(int i=0; i<3; i++)
-            //     current_position[i] = ref_location[i];  
-        }
+        // init value
+        std::fill(current_position, current_position + val_num, 0.0); 
+        for(int i=0; i<3; i++)
+            current_position[i] = ref_location[i];  
 
         size_t df_pr_cnt = 0, tdcp_cnt = 0, clock_const_cnt = 0;
         calculate_factor_count(epoch, constellation_type,
@@ -317,7 +346,9 @@ int main(int argc, char** argv) {
 
         // cout << epoch << " " << df_pr_cnt << " " << tdcp_cnt << " " << clock_const_cnt << endl;
 
+
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
+
             int satellite_type;
 
             if (satellite < 32) // GPS
@@ -343,16 +374,144 @@ int main(int argc, char** argv) {
             if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
                 factor::DiffPesudorangeFactorCostFunctor* functor = 
                     new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
-                                                                pr_value-pr_value_station, satellite_type, df_pr_weight / df_pr_cnt);
+                                                                pr_value-pr_value_station, satellite_type, df_pr_weight);
  
                 ceres::CostFunction* cost_function =
                     new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, val_num>(functor);
 
+
                 problem.AddResidualBlock(cost_function, nullptr, current_position);
             }
 
-            // if(satellite == 13 || satellite == 18)
-            //     continue;
+                // if(satellite == 13 || satellite == 18)
+                // continue;
+
+
+            if(use_tdcp &&
+                epoch > start_epoch){
+                double prev_ph_value = ph_data[epoch-1][satellite];
+                double curr_ph_value = ph_data[epoch][satellite];
+
+                if (!std::isnan(prev_ph_value) && 
+                    !std::isnan(curr_ph_value) &&
+                    !check_sv_data(sv_pos_data[epoch][satellite]) && 
+                    !check_sv_data(sv_pos_data[epoch-1][satellite])){
+                    
+
+                    if (epoch == 645 && satellite == 13){
+                        for(int i=0; i<3; i++)
+                            cout << sv_pos_data[epoch-1][satellite][i] << " ";
+                        cout << endl;
+
+                        for(int i=0; i<3; i++)
+                            cout << sv_pos_data[epoch][satellite][i] << " ";
+                        cout << endl;
+
+                        cout << curr_ph_value - prev_ph_value << endl;
+                        cout << tdcp_weight / tdcp_cnt << endl;
+                    }
+
+                    //Add TDCP Factor
+                    factor::TDCPFactorCostFunctor* functor = 
+                        new factor::TDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
+                                                          curr_ph_value - prev_ph_value,
+                                                          satellite_type, tdcp_weight);
+
+                    ceres::CostFunction* cost_function = 
+                        new ceres::AutoDiffCostFunction<factor::TDCPFactorCostFunctor, 1, val_num, val_num>(functor);
+
+                    
+                    // factor::NumTDCPFactorCostFunctor* functor = 
+                    //     new factor::NumTDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
+                    //                                       curr_ph_value - prev_ph_value,
+                    //                                       satellite_type, tdcp_weight / tdcp_cnt);
+
+                    // ceres::CostFunction* cost_function = 
+                    //     new ceres::NumericDiffCostFunction<factor::NumTDCPFactorCostFunctor, ceres::CENTRAL, 1, val_num, val_num>(functor);
+
+                    problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                }
+            }
+        }
+
+        if (use_clock_const &&
+            epoch > start_epoch){
+            for(int i=4; i<val_num; i++){
+            // Add Constant Clock Bias Factor
+                factor::ConstantClockBiasFactorCostFunctor* functor = 
+                        new factor::ConstantClockBiasFactorCostFunctor(i, clock_const_weight);
+
+                ceres::CostFunction* cost_function = 
+                    new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
+                problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+            }
+        }
+
+        state.push_back(current_position);
+    }
+
+    ceres::Solve(options, &problem, &summary);
+    ceres::Covariance::Options cov_options;
+    ceres::Covariance covariance(cov_options);
+
+    
+
+    std::vector<std::pair<const double*, const double*>> covariance_blocks;
+    for (double* position : state) {
+        covariance_blocks.emplace_back(position, position);
+    }
+
+    // bool covariance_result = covariance.Compute(covariance_blocks, &problem);
+
+    for (size_t epoch = start_epoch; epoch < max_epoch; epoch++) {
+        double* position = state[epoch - start_epoch];
+        std::cout << std::fixed << std::setprecision(6);
+        // std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
+
+        fout_ecef << epoch;
+        for(int i=0; i<val_num; i++)
+            fout_ecef << ", " << position[i];
+        fout_ecef << "\n";
+
+        std::vector<double> ecef_position = {position[0], position[1], position[2]};
+        std::vector<double> res = coordinate::ecef2lla(ecef_position);
+
+        // std::cout << "Epoch(LLA) " << epoch << ": " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
+        fout_llh << epoch << ", " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
+
+        for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
+            int satellite_type;
+
+            if (satellite < 32) // GPS
+                satellite_type = 0;
+            else if(satellite < 59) //GLO
+                satellite_type = 3;
+            else if (satellite < 95) // GAL
+                satellite_type = 2;
+            else if (satellite < 158) // BDS
+                satellite_type = 1;
+            else
+                assert(false);
+
+
+            if(constellation_type.find(satellite_type) == constellation_type.end()){
+                continue;   
+            }
+
+            double pr_value = pr_data[epoch][satellite];
+            double pr_value_station = pr_data_station[epoch][satellite];
+            double next_dop_value = dop_data[epoch][satellite];
+
+            if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station) && !std::isnan(next_dop_value) && !check_sv_data(sv_pos_data[epoch][satellite])){
+                factor::DiffPesudorangeFactorCostFunctor* functor = 
+                    new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
+                                                                pr_value-pr_value_station, satellite_type, df_pr_weight);
+ 
+                double residual[1];
+                functor->operator()(state[epoch-start_epoch], residual);
+                
+                std::cout << "pr,"<< epoch + 1 << "," << satellite + 1 << "," << residual[0] << std::endl;
+            }
 
             if(use_tdcp &&
                 epoch > start_epoch){
@@ -368,56 +527,17 @@ int main(int argc, char** argv) {
                     factor::TDCPFactorCostFunctor* functor = 
                         new factor::TDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
                                                           curr_ph_value - prev_ph_value,
-                                                          satellite_type, tdcp_weight / tdcp_cnt);
+                                                          satellite_type, tdcp_weight);
 
-                    ceres::CostFunction* cost_function = 
-                        new ceres::AutoDiffCostFunction<factor::TDCPFactorCostFunctor, 1, val_num, val_num>(functor);
+                    double residual[1];
 
-                    problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                    functor->operator()(state[epoch - start_epoch - 1], state[epoch - start_epoch], residual);
+
+                    // Output the residual
+                    std::cout << "tdcp,"<< epoch + 1 << "," << satellite + 1 << "," << residual[0] << std::endl;
                 }
             }
         }
-
-        if (use_clock_const &&
-            epoch > start_epoch){
-            for(int i=4; i<7; i++){
-            // Add Constant Clock Bias Factor
-                factor::ConstantClockBiasFactorCostFunctor* functor = 
-                        new factor::ConstantClockBiasFactorCostFunctor(i, clock_const_weight / clock_const_cnt);
-
-                ceres::CostFunction* cost_function = 
-                    new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, val_num, val_num>(functor);
-                problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
-            }
-        }
-
-        state.push_back(current_position);
-        // ceres::Solve(options, &problem, &summary);
-    }
-
-    ceres::Solve(options, &problem, &summary);
-    ceres::Covariance::Options cov_options;
-    // cov_options.algorithm_type = ceres::DENSE_SVD;
-    ceres::Covariance covariance(cov_options);
-
-    std::vector<std::pair<const double*, const double*>> covariance_blocks;
-    for (double* position : state) {
-        covariance_blocks.emplace_back(position, position);
-    }
-
-    bool covariance_result = covariance.Compute(covariance_blocks, &problem);
-
-    for (size_t epoch = 0; epoch < state.size(); ++epoch) {
-        double* position = state[epoch];
-        std::cout << std::fixed << std::setprecision(6);
-        // std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
-        fout_ecef << epoch << ", " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
-
-        std::vector<double> ecef_position = {position[0], position[1], position[2]};
-        std::vector<double> res = coordinate::ecef2lla(ecef_position);
-
-        std::cout << "Epoch(LLA) " << epoch << ": " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
-        fout_llh << epoch << ", " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
 
         // if (covariance_result){
         //     double covariance_matrix[3 * 3];
