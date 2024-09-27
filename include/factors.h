@@ -210,33 +210,59 @@ public:
         const double c = 299792458.0;  // Speed of light in m/s
         const double omega = 7.292115e-5;  // Earth rotation rate in rad/s
 
+        bool debug = false;
+
         T L1_frequency = T(GetL1Frequency(satellite_type_));  // L1 signal frequency in Hz
 
         T sv_position_prev_rot[3];
         T sv_position_curr_rot[3];
 
+        // for (int i=0; i<4; i++){
+        //     cout << prev_state[i] << " ";
+        // }
+
+        // cout << endl;
+
+        // for (int i=0; i<4; i++){
+        //     cout << curr_state[i] << " ";
+        // }
+
+        // cout << endl;
+
+        // for (int i=0; i<3; i++){
+        //     cout << sv_position_prev_[i] << " ";
+        // }
+
+        // cout << endl;
+
+        // for (int i=0; i<3; i++){
+        //     cout << sv_position_curr_[i] << " ";
+        // }
+
+        // cout << endl;
+
         RotateSatellitePosition(prev_state, sv_position_prev_, sv_position_prev_rot);
         RotateSatellitePosition(curr_state, sv_position_curr_, sv_position_curr_rot);
 
+        if (debug){
+            for (int i=0; i<3; i++){
+                cout << sv_position_prev_rot[i] << " ";
+            }
 
-        // for (int i=0; i<3; i++){
-        //     cout << sv_position_prev_rot[i] << " ";
-        // }
+            cout << endl;
 
-        // cout << endl;
+            for (int i=0; i<3; i++){
+                cout << sv_position_curr_rot[i] << " ";
+            }
 
-        // for (int i=0; i<3; i++){
-        //     cout << sv_position_curr_rot[i] << " ";
-        // }
+            cout << endl;
+        }
 
-        // cout << endl;
 
         T los_vector_prev[3];
         T los_vector_curr[3];
         CalculateLOS(prev_state, sv_position_prev_rot, los_vector_prev);
         CalculateLOS(curr_state, sv_position_curr_rot, los_vector_curr);
-
-        // cout << endl;
 
         T D = T(0);
         T g = T(0);
@@ -246,7 +272,9 @@ public:
             g += los_vector_curr[i] * prev_state[i] - los_vector_prev[i] * prev_state[i];
         }
 
-        // cout << "D : " << D << "  g : " << g << endl;
+
+        if (debug)
+            cout << "D : " << D << "  g : " << g << endl;
 
 
         T tdcp_pred = T(c) * (curr_state[3 + satellite_type_] - prev_state[3 + satellite_type_]);
@@ -255,14 +283,19 @@ public:
             tdcp_pred += -los_vector_prev[i] * (curr_state[i] - prev_state[i]);
             // cout << los_vector_prev[i] << " ";
         }
+        
 
-        // cout << "predicted : " << tdcp_pred << endl;
+        if (debug){
+            cout << "predicted : " << tdcp_pred << endl;
+        }
 
         T tdcp_measure = (T(c) / L1_frequency) * T(pseudorange_) - D + g;
 
-        // cout << "dafd" << T(pseudorange_) << endl;
-        // cout << "tdcp measured : " << (T(c) / L1_frequency) * T(pseudorange_) << endl;
-        // cout << "measured : " << tdcp_measure << endl;
+        if (debug){
+            cout << "dafd" << T(pseudorange_) << endl;
+            cout << "tdcp measured : " << (T(c) / L1_frequency) * T(pseudorange_) << endl;
+            cout << "measured : " << tdcp_measure << endl;
+        }
 
         residual[0] = (tdcp_pred - tdcp_measure) * T(sqrt(weight_));
 
