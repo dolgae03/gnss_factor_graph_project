@@ -43,7 +43,8 @@ std::string time_file = "time.csv";
 std::vector<std::vector<double>> pr_data = readPseudorangeCSV(rover_dir + pr_file);
 std::vector<std::vector<double>> ph_data = readPseudorangeCSV(rover_dir + ph_file);
 std::vector<std::vector<double>> dop_data = readPseudorangeCSV(rover_dir + dop_file);
-std::vector<std::vector<std::vector<double>>> sv_pos_data = readSVPosAndVelCSV(rover_dir + sv_pos_file);
+std::vector<std::vector<std::vector<double>>> sv_pos_data = readSVPosAndVelCSV(station_dir + sv_pos_file);
+// std::vector<std::vector<std::vector<double>>> sv_pos_data = readSVPosAndVelCSV(rover_dir + sv_pos_file);
 std::vector<std::vector<std::vector<double>>> sv_vel_data = readSVPosAndVelCSV(rover_dir + sv_vel_file);
 std::vector<std::pair<int, double>> time_data = readGpsTimeCSV(rover_dir + time_file);
 
