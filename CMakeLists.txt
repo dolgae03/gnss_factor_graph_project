@@ -4,6 +4,7 @@ project(ceres_solver_gnss)
 
 find_package(Ceres REQUIRED)
 find_package(Boost REQUIRED COMPONENTS program_options filesystem)
+find_package(absl REQUIRED)
 
 enable_testing()
 add_test(NAME run_tests COMMAND run_tests)

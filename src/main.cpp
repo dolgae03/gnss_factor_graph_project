@@ -26,31 +26,35 @@ namespace fs = boost::filesystem;
 
 
 #define DF_PR_WEIGHT (double)1.0
-#define TDCP_WEIGHT (double)1.0e-4
-#define CONSATANT_CLOCK_WEIGHT (double)1.0e-5
+#define TDCP_WEIGHT (double) 1.0
+#define CONSATANT_CLOCK_WEIGHT (double) 1.0e-5
 
-std::string rover_dir = "../data/data_rover/";
-std::string station_dir = "../data/data_station/";
+// std::string rover_dir = "../data/rooftop4/data_rover/";
+// std::string station_dir = "../data/rooftop4/data_station/";
 
-std::string pr_file = "pr.csv";
-std::string ph_file = "carrier.csv";
-std::string dop_file = "dop.csv";
-std::string sv_pos_file = "sv_pos.csv";
-std::string sv_vel_file = "sv_vel.csv";
-std::string time_file = "time.csv";
+std::string version = "/v1";  // version 1 to 100
+std::string rover_dir = "../data/monte_carlo/tau_100/data_rover" + version;
+std::string station_dir = "../data/monte_carlo/tau_100/data_base" + version;
+
+std::string pr_file = "/pr.csv";
+std::string ph_file = "/carrier.csv";
+std::string dop_file = "/dop.csv";
+std::string sv_pos_file = "/sv_pos.csv";
+std::string sv_vel_file = "/sv_vel.csv";
+std::string time_file = "/time.csv";
 
 // CSV 파일 읽기
 std::vector<std::vector<double>> pr_data = readPseudorangeCSV(rover_dir + pr_file);
 std::vector<std::vector<double>> ph_data = readPseudorangeCSV(rover_dir + ph_file);
 std::vector<std::vector<double>> dop_data = readPseudorangeCSV(rover_dir + dop_file);
 std::vector<std::vector<std::vector<double>>> sv_pos_data = readSVPosAndVelCSV(rover_dir + sv_pos_file);
-std::vector<std::vector<std::vector<double>>> sv_vel_data = readSVPosAndVelCSV(rover_dir + sv_vel_file);
+// std::vector<std::vector<std::vector<double>>> sv_vel_data = readSVPosAndVelCSV(rover_dir + sv_vel_file);
 std::vector<std::pair<int, double>> time_data = readGpsTimeCSV(rover_dir + time_file);
 
 std::vector<std::vector<double>> pr_data_station = readPseudorangeCSV(station_dir + pr_file);
 std::vector<std::vector<double>> dop_data_station = readPseudorangeCSV(station_dir + dop_file);
 std::vector<std::vector<std::vector<double>>> sv_pos_data_station = readSVPosAndVelCSV(station_dir + sv_pos_file);
-std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
+// std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
 std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(station_dir + time_file);
 
 
@@ -266,7 +270,12 @@ int main(int argc, char** argv) {
     std::cout << "\n";
 
     // 폴더 이름을 start_epoch, T, df_pr_weight, tdcp_weight, clock_const_weight, gps_type, gps_constellations로 구성
-    std::string folder_name = "../result/" + constellation_name + "/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
+    std::string matlab_save_dir = "/mnt/c/jaeryoung/research/factor_graph/fgo_basic/error_simulation/result/result_ceres/" ;
+    // std::string folder_name = matlab_save_dir + constellation_name +"/rooftop4"+ "/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
+    std::string folder_name = matlab_save_dir + "/monte_carlo/tau_100/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
+
+    
+
 
     if (use_df_pr)
         folder_name += "_dfpr_" + std::to_string(df_pr_weight);
@@ -277,38 +286,48 @@ int main(int argc, char** argv) {
     if (use_clock_const)
         folder_name += "_clockconst_" + std::to_string(clock_const_weight);
 
-
+    std::string folder_name_version = folder_name + version;
     // 폴더 생성
-    if (!fs::exists(folder_name)) {
-        if (!fs::create_directories(folder_name)) {
-            std::cerr << "Error: Could not create directory " << folder_name << std::endl;
+    if (!fs::exists(folder_name_version)) {
+        if (!fs::create_directories(folder_name_version)) {
+            std::cerr << "Error: Could not create directory " << folder_name_version << std::endl;
             return EXIT_FAILURE;
         }
     }
 
     // 로그 파일 경로
-    std::string log_file_ecef = folder_name + "/pos_ecef.csv";
-    std::string log_file_llh = folder_name + "/pos_llh.csv";
-    std::string log_file_cov = folder_name + "/error_cov.csv";
+     
+    std::string log_file_ecef = folder_name_version + "/pos_ecef.csv";
+    std::string log_file_llh = folder_name_version + "/pos_llh.csv";
+    std::string log_file_cov = folder_name_version + "/error_cov.csv";
+    std::string log_file_residual_pr = folder_name_version + "/residual_pr.csv";
+    std::string log_file_residual_tdcp = folder_name_version + "/residual_tdcp.csv";
 
     // log results
     std::ofstream fout_ecef(log_file_ecef);
     std::ofstream fout_llh(log_file_llh);
     std::ofstream fout_cov(log_file_cov);
+    std::ofstream fout_residual_pr(log_file_residual_pr);
+    std::ofstream fout_residual_tdcp(log_file_residual_tdcp);
 
     fout_ecef << "Epoch, Position X(m), Position Y(m), Position Z(m), Clk Bias(s)-GPS\n";
     fout_llh << "Epoch, Latitude, Longitude, Altitude\n";
+    fout_residual_pr << "pr_residual, epoch, SV, residual" << endl;
+    fout_residual_tdcp << "TDCP_residual, epoch, SV, residual" << endl;
     fout_ecef  << std::fixed << std::setprecision(10);
     fout_llh  << std::fixed << std::setprecision(10);
     fout_cov  << std::fixed << std::setprecision(10);
+    fout_residual_pr  << std::fixed << std::setprecision(6);
+    fout_residual_tdcp  << std::fixed << std::setprecision(6);
 
     std::vector<double * > state;
     ceres::Problem problem;
 
     // std::vector<double> ref_location = coordinate::lla2ecef({36.372371713580250, 127.358800510185191, 91.642377777777796});
-    std::vector<double> ref_location = {-3.119992580788137e+06, 4.086868171897103e+06, 3.761594895585738e+06};
+    // std::vector<double> ref_location = {-3.119992580788137e+06, 4.086868171897103e+06, 3.761594895585738e+06}; // rooftop4
+    std::vector<double> ref_location = coordinate::lla2ecef({36.3727470000000, 127.357671000000, 10}); //monte-carlo
 
-    const size_t val_num = 6; // x, y ,z, t_gps, t_glo,
+    const size_t val_num = 4; // x, y ,z, t_gps, t_glo,
     const size_t max_epoch = start_epoch + T; 
 
     double* previous_position = nullptr;
@@ -321,10 +340,10 @@ int main(int argc, char** argv) {
     // options.minimizer_type = ceres::LINE_SEARCH;  // MATLAB의 'quasi-newton' 알고리즘과 대응
     // options.line_search_direction_type = ceres::BFGS;  // BFGS 방법 사용
     options.minimizer_progress_to_stdout = true;  // 'Display','iter-detailed'에 대응
-    options.gradient_tolerance = 1e-13;  // 'OptimalityTolerance'를 더 엄격하게
-    options.parameter_tolerance = 1e-13;  // 'TolX'를 더 엄격하게
-    options.function_tolerance = 1e-13;  // 'FunctionTolerance'를 더 엄격하게
-    options.gradient_check_numeric_derivative_relative_step_size = 1e-12;  // 'FiniteDifferenceStepSize'를 더 엄격하게
+    options.gradient_tolerance = 1e-10;  // 'OptimalityTolerance'를 더 엄격하게
+    options.parameter_tolerance = 1e-10;  // 'TolX'를 더 엄격하게
+    options.function_tolerance = 1e-10;  // 'FunctionTolerance'를 더 엄격하게
+    options.gradient_check_numeric_derivative_relative_step_size = 1e-13;  // 'FiniteDifferenceStepSize'를 더 엄격하게
     options.max_num_iterations = 1e+5;  // 'MaxIterations'를 늘려 더 많은 반복 허용
 
     std::string option_err;
@@ -389,8 +408,8 @@ int main(int argc, char** argv) {
                 problem.AddResidualBlock(cost_function, nullptr, current_position);
             }
 
-                if(satellite == 8)
-                continue;
+                // if(satellite == 8)
+                // continue;
 
 
             if(use_tdcp &&
@@ -415,27 +434,32 @@ int main(int argc, char** argv) {
                             cout << sv_pos_data[epoch][satellite][i] << " ";
                         cout << endl;
 
-                        cout << curr_ph_value - prev_ph_value << endl;
-                        cout << tdcp_weight / tdcp_cnt << endl;
+                        // cout << curr_ph_value - prev_ph_value << endl;
+                        // cout << tdcp_weight / tdcp_cnt << endl;
                     }
+                    // if (((epoch == 646) || (epoch == 654)) && ((satellite == 13) || (satellite == 18)))
+                    //     tdcp_weight = 0;
+                    // else 
+                    //     tdcp_weight = 100;
 
                     //Add TDCP Factor
-                    // factor::TDCPFactorCostFunctor* functor = 
-                    //     new factor::TDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
+                    factor::TDCPFactorCostFunctor* functor = 
+                        new factor::TDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
+                                                          curr_ph_value - prev_ph_value,
+                                                          satellite_type, tdcp_weight);
+
+                    ceres::CostFunction* cost_function = 
+                        new ceres::AutoDiffCostFunction<factor::TDCPFactorCostFunctor, 1, val_num, val_num>(functor);
+
+
+                    
+                    // factor::NumTDCPFactorCostFunctor* functor = 
+                    //     new factor::NumTDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
                     //                                       curr_ph_value - prev_ph_value,
                     //                                       satellite_type, tdcp_weight);
 
                     // ceres::CostFunction* cost_function = 
-                    //     new ceres::AutoDiffCostFunction<factor::TDCPFactorCostFunctor, 1, val_num, val_num>(functor);
-
-                    
-                    factor::NumTDCPFactorCostFunctor* functor = 
-                        new factor::NumTDCPFactorCostFunctor(sv_pos_data[epoch-1][satellite], sv_pos_data[epoch][satellite],
-                                                          curr_ph_value - prev_ph_value,
-                                                          satellite_type, tdcp_weight / tdcp_cnt);
-
-                    ceres::CostFunction* cost_function = 
-                        new ceres::NumericDiffCostFunction<factor::NumTDCPFactorCostFunctor, ceres::CENTRAL, 1, val_num, val_num>(functor);
+                    //     new ceres::NumericDiffCostFunction<factor::NumTDCPFactorCostFunctor, ceres::CENTRAL, 1, val_num, val_num>(functor);
 
                     problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
                 }
@@ -456,19 +480,20 @@ int main(int argc, char** argv) {
         }
 
         state.push_back(current_position);
-        ceres::Solve(options, &problem, &summary);
+    
     }
+
+    ceres::Solve(options, &problem, &summary);
+
     ceres::Covariance::Options cov_options;
     ceres::Covariance covariance(cov_options);
     
-
     std::vector<std::pair<const double*, const double*>> covariance_blocks;
     for (double* position : state) {
         covariance_blocks.emplace_back(position, position);
     }
 
     // bool covariance_result = covariance.Compute(covariance_blocks, &problem);
-
     for (size_t epoch = start_epoch; epoch < max_epoch; epoch++) {
         double* position = state[epoch - start_epoch];
         // std::cout << std::fixed << std::setprecision(6);
@@ -519,6 +544,7 @@ int main(int argc, char** argv) {
                 functor(state[epoch-start_epoch], residual);
                 
                 df_pr_sum += residual[0] * residual[0];
+                fout_residual_pr << epoch +1 << ", " << satellite+1 << ", "<< residual[0] << endl;
             }
 
             if(use_tdcp &&
@@ -571,14 +597,18 @@ int main(int argc, char** argv) {
                     tdcp_sum += residual[0] * residual[0];
                     // std::cout << "tdcp,"<< epoch + 1 << "," << satellite<< ","<<  residual[0] * residual[0] << std::endl;
                     // Output the residual
+                    fout_residual_tdcp << epoch +1 << ", " << satellite+1 << ", "<< residual[0] << endl;
+                    double lambda = 0.190293672798365;
+                    // if (epoch == 646 ) 
+                    //     cout << "-- epoch " << epoch+1 << " | SV "<< satellite+1 << " | residual "<< residual[0]/sqrt(100) << " | TDCP meas "<<lambda*(curr_ph_value - prev_ph_value)  << " | curr_ph_value " <<lambda*curr_ph_value << endl;
                     
                 }
                 
             }
         }
-        std::cout << "pr,"<< epoch + 1 << "," << df_pr_sum << std::endl;
-        if(use_tdcp && epoch > start_epoch)
-            std::cout << "tdcp,"<< epoch + 1 << "," << tdcp_sum << std::endl;
+        // std::cout << "pr,"<< epoch + 1 << "," << df_pr_sum << std::endl;
+        // if(use_tdcp && epoch > start_epoch)
+            // std::cout << "tdcp,"<< epoch + 1 << "," << tdcp_sum << std::endl;
 
         // if (covariance_result){
         //     double covariance_matrix[3 * 3];
@@ -602,6 +632,8 @@ int main(int argc, char** argv) {
     fout_ecef.close();
     fout_llh.close();
     fout_cov.close();
+    fout_residual_pr.close();
+    fout_residual_tdcp.close();
 
     return 0;
 }

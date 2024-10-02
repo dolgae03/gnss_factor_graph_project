@@ -19,6 +19,9 @@ std::vector<std::vector<std::vector<double>>> readSVPosAndVelCSV(const std::stri
 // pseudorange 데이터를 읽고 벡터로 반환하는 함수
 std::vector<std::vector<double>> readPseudorangeCSV(const std::string& filename);
 
+// State Solution 데이터를 읽고 벡터로 반환하는 함수
+std::vector<std::vector<double>> readStateCSV(const std::string& filename);
+
 // sv_pos.csv 및 sv_vel.csv 데이터를 출력하는 함수
 void printSVPosAndVelCSV(const std::vector<std::vector<std::vector<double>>>& data);
 

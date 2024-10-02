@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <limits>
 
+using namespace std;
+
 bool isValidInteger(const std::string& str) {
     std::istringstream iss(str);
     int value;
@@ -113,6 +115,54 @@ std::vector<std::vector<double>> readPseudorangeCSV(const std::string& filename)
 
     return data;
 }
+
+
+std::vector<std::vector<double>> readStateCSV(const std::string& filename) {
+    std::ifstream file(filename);
+    std::vector<std::vector<double>> data;
+    std::string line;
+
+    if (file.is_open()) {
+        // Skip the header line
+        std::getline(file, line);
+
+        while (std::getline(file, line)) {
+            std::vector<double> epoch_data;
+            std::stringstream lineStream(line);
+            std::string cell;
+            int colIndex = 0;
+
+            // Read each cell separated by commas and only capture the first 5 columns
+            while (getline(lineStream, cell, ',') && colIndex < 7) {
+                double value;
+                if (cell == "NaN") {
+                    value = std::numeric_limits<double>::quiet_NaN();
+                } else {
+                    value = stod(cell);
+                }
+                epoch_data.push_back(value);
+                ++colIndex;
+            }
+
+            // Add parsed line to data vector if it has exactly 7 columns
+            if (epoch_data.size() == 7) {
+                data.push_back(epoch_data);
+            }
+        }
+
+        file.close();
+    } else {
+        std::cerr << "Unable to open file: " << filename << std::endl;
+    }
+
+    return data;
+}
+
+
+
+
+
+
 
 void printSVPosAndVelCSV(const std::vector<std::vector<std::vector<double>>>& data) {
     for (const auto& epoch : data) {

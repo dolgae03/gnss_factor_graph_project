@@ -83,10 +83,11 @@ class ConstantClockBiasFactorCostFunctor {
         template <typename T>
         bool operator()(const T* const state1, const T* const state2, T* residual) const {
             // state1과 state2의 clock bias 차이 계산
+            const double c = 299792458.0;  // Speed of light in m/s
             T clock_bias1 = state1[satellite_type_];
             T clock_bias2 = state2[satellite_type_];
             
-            residual[0] = (clock_bias1 - clock_bias2) * T(weight_);
+            residual[0] = (clock_bias1 - clock_bias2) *T(c) * T(weight_);
             return true;
         }
 
@@ -216,47 +217,15 @@ public:
 
         T sv_position_prev_rot[3];
         T sv_position_curr_rot[3];
-
-        // for (int i=0; i<4; i++){
-        //     cout << prev_state[i] << " ";
-        // }
-
-        // cout << endl;
-
-        // for (int i=0; i<4; i++){
-        //     cout << curr_state[i] << " ";
-        // }
-
-        // cout << endl;
-
-        // for (int i=0; i<3; i++){
-        //     cout << sv_position_prev_[i] << " ";
-        // }
-
-        // cout << endl;
-
-        // for (int i=0; i<3; i++){
-        //     cout << sv_position_curr_[i] << " ";
-        // }
-
-        // cout << endl;
+  
 
         RotateSatellitePosition(prev_state, sv_position_prev_, sv_position_prev_rot);
         RotateSatellitePosition(curr_state, sv_position_curr_, sv_position_curr_rot);
 
-        if (debug){
-            for (int i=0; i<3; i++){
-                cout << sv_position_prev_rot[i] << " ";
-            }
-
-            cout << endl;
-
-            for (int i=0; i<3; i++){
-                cout << sv_position_curr_rot[i] << " ";
-            }
-
-            cout << endl;
-        }
+        for (int i = 0; i < 3; ++i) {
+            sv_position_prev_rot[i] = T(sv_position_prev_[i]);
+            sv_position_curr_rot[i] = T(sv_position_curr_[i]);
+        }     
 
 
         T los_vector_prev[3];
@@ -264,41 +233,49 @@ public:
         CalculateLOS(prev_state, sv_position_prev_rot, los_vector_prev);
         CalculateLOS(curr_state, sv_position_curr_rot, los_vector_curr);
 
-        T D = T(0);
-        T g = T(0);
+        T range_prev = T(0);
+        for(int i=0; i<3; i++)
+            range_prev += (prev_state[i] - sv_position_prev_rot[i]) * (prev_state[i] - sv_position_prev_rot[i]);
+        range_prev = ceres::sqrt(range_prev);
 
-        for (int i = 0; i < 3; ++i) {
-            D += los_vector_curr[i] * T(sv_position_curr_rot[i]) - los_vector_prev[i] * T(sv_position_prev_rot[i]);
-            g += los_vector_curr[i] * prev_state[i] - los_vector_prev[i] * prev_state[i];
-        }
+        T range_curr = T(0);
+        for(int i=0; i<3; i++)
+            range_curr += (curr_state[i] - sv_position_curr_rot[i]) * (curr_state[i] - sv_position_curr_rot[i]);
+        range_curr = ceres::sqrt(range_curr);
 
-
-        if (debug)
-            cout << "D : " << D << "  g : " << g << endl;
-
-
-        T tdcp_pred = T(c) * (curr_state[3 + satellite_type_] - prev_state[3 + satellite_type_]);
-        // cout << "predicted : " << tdcp_pred << endl;
-        for (int i = 0; i < 3; ++i){ //{
-            tdcp_pred += -los_vector_prev[i] * (curr_state[i] - prev_state[i]);
-            // cout << los_vector_prev[i] << " ";
-        }
+        T clock_bias_diff = T(c) * (curr_state[3 + satellite_type_] - prev_state[3 + satellite_type_]);
+        T tdcp_pred = range_curr - range_prev + clock_bias_diff;
         
 
-        if (debug){
-            cout << "predicted : " << tdcp_pred << endl;
-        }
-
-        T tdcp_measure = (T(c) / L1_frequency) * T(pseudorange_) - D + g;
-
-        if (debug){
-            cout << "dafd" << T(pseudorange_) << endl;
-            cout << "tdcp measured : " << (T(c) / L1_frequency) * T(pseudorange_) << endl;
-            cout << "measured : " << tdcp_measure << endl;
-        }
-
+        T tdcp_measure = (T(c) / L1_frequency) * T(pseudorange_);
         residual[0] = (tdcp_pred - tdcp_measure) * T(sqrt(weight_));
-
+        
+        if (debug){
+            std::cout << std::fixed << std::setprecision(6);
+            cout << "range_prev: " << range_prev <<" | range_curr: "<< range_curr << " | clock_bias_diff: " << clock_bias_diff<< " | tdcp_pred: "<<tdcp_pred << " | tdcp_meas: " << tdcp_measure << endl;
+            cout << "----- satellite prev positions: ";
+            for(int i=0; i<3; i++) {
+                cout << " "<< sv_position_prev_rot[i];
+            }
+            cout << endl;
+            cout << "----- satellite curr positions: ";
+            for(int i=0; i<3; i++) {
+                cout << " "<< sv_position_curr_rot[i];
+            }
+            cout << endl;
+                        cout << "----- (no rot) satellite prev positions: ";
+            for(int i=0; i<3; i++) {
+                cout << " "<< sv_position_prev_[i];
+            }
+            cout << endl;
+            cout << "----- (no rot) satellite curr positions: ";
+            for(int i=0; i<3; i++) {
+                cout << " "<< sv_position_curr_[i];
+            }
+            cout << endl;
+            
+            // cout << "residual: "<< residual[0] << " | tdcp measured : " << tdcp_measure << " | tdcp predicted: " << tdcp_pred << endl;
+        }
         return true;
     }
 
@@ -355,7 +332,7 @@ public:
 
         double tdcp_measure = (c / L1_frequency) * pseudorange_ - D + g;
 
-        residual[0] = (tdcp_pred - tdcp_measure) * weight_;
+        residual[0] = (tdcp_pred - tdcp_measure) * sqrt(weight_);
 
         return true;
     }
