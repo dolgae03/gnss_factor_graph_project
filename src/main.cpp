@@ -512,9 +512,9 @@ int main(int argc, char** argv) {
     int tau = 100;
     
 
-    int version_num = 76;
+    int version_num = 100;
 
-    for (int version = 75; version < version_num; version++) {
+    for (int version = 0; version < version_num; version++) {
         runOptimization(tau, version, matlab_save_dir, start_epoch, T, use_df_pr, use_tdcp, use_clock_const, df_pr_weight, tdcp_weight, clock_const_weight, constellation_type, constellation_name);
     }
 
