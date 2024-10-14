@@ -75,6 +75,15 @@ void CalculateLOS(const T* user_state,
         los_vector[i] = diff_vector[i] / norm;
 }
 
+template <typename T>
+T computeRange(const T* pos1, const T* pos2) {
+    T range = T(0);
+    for (int i = 0; i < 3; ++i) {
+        range += (pos1[i] - pos2[i]) * (pos1[i] - pos2[i]);
+    }
+    return ceres::sqrt(range);
+}
+
 namespace factor {
 class ConstantClockBiasFactorCostFunctor {
     public:
@@ -99,8 +108,45 @@ class ConstantClockBiasFactorCostFunctor {
 
 
 class DiffPesudorangeFactorCostFunctor {
+public:
+    DiffPesudorangeFactorCostFunctor(const std::vector<double>& ref_position, const std::vector<double>& sv_position, double pesudorange, int satellite_type, double weight, int sv)
+        : ref_position_(ref_position), sv_position_(sv_position), pesudorange_(pesudorange), satellite_type_(satellite_type), weight_(weight), sv_(sv) {}
+
+    template <typename T>
+    bool operator()(const T* state, T* residual) const {
+        T rotated_sv_pos[3];
+        RotateSatellitePosition(state, sv_position_, rotated_sv_pos);
+
+        // Use computeRange for both state and reference position
+        T range_to_sv = computeRange(state, rotated_sv_pos);
+        T clock_bias = state[3 + satellite_type_];
+        range_to_sv += clock_bias;
+
+        // Now use ref_position_t with computeRange
+        T ref_position_t[3];
+        for (int i = 0; i < 3; ++i) {
+            ref_position_t[i] = T(ref_position_[i]);
+        }
+        T range_to_ref = computeRange(ref_position_t, rotated_sv_pos);
+        T estimated_pr_diff = range_to_sv - range_to_ref;
+        residual[0] = (T(pesudorange_) - estimated_pr_diff) * T(sqrt(weight_));
+
+        return true;
+    }
+
+private:
+    std::vector<double> ref_position_;
+    std::vector<double> sv_position_;
+    double pesudorange_;
+    double weight_;
+    int satellite_type_;
+    int sv_;
+};
+
+
+class DiffPesudorangeTauFactorCostFunctor {
    public:
-        DiffPesudorangeFactorCostFunctor(const std::vector<double>& ref_position, const std::vector<double>& sv_position, double pesudorange, int satellite_type, double weight, int sv)
+        DiffPesudorangeTauFactorCostFunctor(const std::vector<double>& ref_position, const std::vector<double>& sv_position, double pesudorange, int satellite_type, double weight, int sv)
             : ref_position_(ref_position), sv_position_(sv_position), pesudorange_(pesudorange), satellite_type_(satellite_type), weight_(weight), sv_(sv) {}
 
         template <typename T>
@@ -111,26 +157,16 @@ class DiffPesudorangeFactorCostFunctor {
             T rotated_sv_pos[3];
             RotateSatellitePosition(state, sv_position_, rotated_sv_pos);
             
-            T range_to_sv = T(0);
-            for(int i=0; i<3; i++)
-                range_to_sv += (state[i] - rotated_sv_pos[i]) * (state[i] - rotated_sv_pos[i]);
-
+            T range_to_sv = computeRange(state, rotated_sv_pos);
             T clock_bias = state[3 + satellite_type_];
-            range_to_sv = ceres::sqrt(range_to_sv) + clock_bias;
+            range_to_sv += clock_bias;
 
-
-            T range_to_ref = T(0);
-            for(int i=0; i<3; i++)
-                range_to_ref += (T(ref_position_[i]) - rotated_sv_pos[i]) * (T(ref_position_[i])  - rotated_sv_pos[i]);
-
-            range_to_ref = ceres::sqrt(range_to_ref);
-
+            T ref_position_T[3];
+            for (int i = 0; i < 3; ++i) {
+                ref_position_T[i] = T(ref_position_[i]);
+            }
+            T range_to_ref = computeRange(ref_position_T, rotated_sv_pos);
             T estimated_pr_diff = range_to_sv - range_to_ref + noise_state[0];
-            // T estimated_pr_diff = range_to_sv - range_to_ref ;
-
-            // T estimated_pr_diff = range_to_sv - range_to_ref ;
-            // cout<< "@ At pr factor: SV " <<sv_ << " | Noise " << noise_state[sv_]<<endl;
-
             residual[0] = (T(pesudorange_) - estimated_pr_diff) * T(sqrt(weight_));
 
             return true;
@@ -338,7 +374,7 @@ class TimeCorrelationFactorCostFunctor {
             T* current_noise_est = new T[1]; 
             double dt = 1.0;
             current_noise_est[0] = exp(-dt / tau_)*previous_noise[0];
-            residual[0] = abs(current_noise[0] - current_noise_est[0]) * T(sqrt(weight_));
+            residual[0] = abs(current_noise_est[0] - current_noise[0]) * T(sqrt(weight_));
 
             return true;
         }

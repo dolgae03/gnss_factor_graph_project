@@ -29,7 +29,7 @@ namespace fs = boost::filesystem;
 #define DF_PR_WEIGHT (double) 1.0/sqrt(2)
 #define TDCP_WEIGHT (double) 50.0/sqrt(2)
 #define CONSATANT_CLOCK_WEIGHT (double) 0
-#define TAU_WEIGHT (double) 100
+#define TAU_WEIGHT (double) 0.8/sqrt(2)
 
 // std::string rover_dir = "../data/rooftop4/data_rover/";
 // std::string station_dir = "../data/rooftop4/data_station/";
@@ -180,6 +180,7 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     std::string log_file_cov = folder_name_version + "/error_cov.csv";
     std::string log_file_residual_pr = folder_name_version + "/residual_pr.csv";
     std::string log_file_residual_tdcp = folder_name_version + "/residual_tdcp.csv";
+    std::string log_file_pr_noise = folder_name_version + "/pr_noise.csv";
 
     // log results
     std::ofstream fout_ecef(log_file_ecef);
@@ -187,16 +188,19 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     std::ofstream fout_cov(log_file_cov);
     std::ofstream fout_residual_pr(log_file_residual_pr);
     std::ofstream fout_residual_tdcp(log_file_residual_tdcp);
+    std::ofstream fout_pr_noise(log_file_pr_noise);
 
     fout_ecef << "Epoch, Position X(m), Position Y(m), Position Z(m), Clk Bias(s)-GPS\n";
     fout_llh << "Epoch, Latitude, Longitude, Altitude\n";
-    fout_residual_pr << "pr_residual, epoch, SV, residual" << endl;
-    fout_residual_tdcp << "TDCP_residual, epoch, SV, residual" << endl;
+    fout_residual_pr << "Epoch, SV, Pr_residual" << endl;
+    fout_residual_tdcp << "Epoch, SV, TDCP_residual" << endl;
+    fout_pr_noise << "Epoch, SV, Pr_noise" << endl;
     fout_ecef  << std::fixed << std::setprecision(10);
     fout_llh  << std::fixed << std::setprecision(10);
     fout_cov  << std::fixed << std::setprecision(10);
     fout_residual_pr  << std::fixed << std::setprecision(6);
     fout_residual_tdcp  << std::fixed << std::setprecision(6);
+    fout_pr_noise  << std::fixed << std::setprecision(10);
 
     std::vector<double * > state;
     std::vector<double * > position_states;
@@ -239,7 +243,7 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     current_position = new double[num_var_pos];
     current_noise = new double[num_var_meas];
     std::fill(current_position, current_position + num_var_pos, 0.0); 
-    std::fill(current_noise, current_noise + num_var_meas, 0.01);
+    std::fill(current_noise, current_noise + num_var_meas, 0.0);
 
 
     for(size_t epoch=start_epoch; epoch < max_epoch; ++epoch){
@@ -278,27 +282,44 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
             double pr_value_station = pr_data_station[epoch][satellite];
  
 
-            if (use_tau) {  
+            if (use_tau && tau_weight != 0.0) {  
     
                 factor::TimeCorrelationFactorCostFunctor* functor = 
                     new factor::TimeCorrelationFactorCostFunctor(tau, tau_weight);
                 ceres::CostFunction* cost_function =
                     new ceres::AutoDiffCostFunction<factor::TimeCorrelationFactorCostFunctor, 1, 1, 1>(functor);
                 problem.AddResidualBlock(cost_function, nullptr, &previous_noise[satellite], &current_noise[satellite]);
+
+                if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station) && !check_sv_data(sv_pos_data[epoch][satellite])){
+                      factor::DiffPesudorangeTauFactorCostFunctor* functor_prTau = 
+                        new factor::DiffPesudorangeTauFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
+                                                                    pr_value-pr_value_station, satellite_type, df_pr_weight, satellite);
+
+                    ceres::CostFunction* cost_function_prTau =
+                        new ceres::AutoDiffCostFunction<factor::DiffPesudorangeTauFactorCostFunctor, 1, num_var_pos, 1>(functor_prTau);
+
+
+                    problem.AddResidualBlock(cost_function_prTau, nullptr, current_position, &current_noise[satellite]);
+                }
+
+            } else {
+
+                if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station) && !check_sv_data(sv_pos_data[epoch][satellite])){
+
+                      factor::DiffPesudorangeFactorCostFunctor* functor_pr = 
+                        new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
+                                                                    pr_value-pr_value_station, satellite_type, df_pr_weight, satellite);
+
+                    ceres::CostFunction* cost_function_pr =
+                        new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, num_var_pos>(functor_pr);
+
+
+                    problem.AddResidualBlock(cost_function_pr, nullptr, current_position);
+                }
+
+
             }
-
-            if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station) && !check_sv_data(sv_pos_data[epoch][satellite])){
-
-                factor::DiffPesudorangeFactorCostFunctor* functor = 
-                    new factor::DiffPesudorangeFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
-                                                                pr_value-pr_value_station, satellite_type, df_pr_weight, satellite);
-
-                ceres::CostFunction* cost_function =
-                    new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, num_var_pos, 1>(functor);
-
-
-                problem.AddResidualBlock(cost_function, nullptr, current_position, &current_noise[satellite]);
-            }
+        
 
 
 
@@ -415,10 +436,10 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
             double pr_value = pr_data[epoch][satellite];
             double pr_value_station = pr_data_station[epoch][satellite];
             if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station)  && !check_sv_data(sv_pos_data[epoch][satellite])){
-                factor::DiffPesudorangeFactorCostFunctor functor(ref_location, sv_pos_data[epoch][satellite], 
+                factor::DiffPesudorangeTauFactorCostFunctor functor_prTau(ref_location, sv_pos_data[epoch][satellite], 
                                                                 pr_value-pr_value_station, satellite_type, df_pr_weight, satellite);
                 double residual[1];
-                functor(position_states[epoch-start_epoch], &noise_states[epoch-start_epoch][satellite], residual);
+                functor_prTau(position_states[epoch-start_epoch], &noise_states[epoch-start_epoch][satellite], residual);
                 
                 df_pr_sum += residual[0] * residual[0];
                 fout_residual_pr << epoch +1 << ", " << satellite+1 << ", "<< residual[0] << endl;
