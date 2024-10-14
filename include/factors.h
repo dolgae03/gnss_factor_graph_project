@@ -125,7 +125,9 @@ class DiffPesudorangeFactorCostFunctor {
 
             range_to_ref = ceres::sqrt(range_to_ref);
 
-            T estimated_pr_diff = range_to_sv - range_to_ref + noise_state[sv_];
+            T estimated_pr_diff = range_to_sv - range_to_ref + noise_state[0];
+            // T estimated_pr_diff = range_to_sv - range_to_ref ;
+
             // T estimated_pr_diff = range_to_sv - range_to_ref ;
             // cout<< "@ At pr factor: SV " <<sv_ << " | Noise " << noise_state[sv_]<<endl;
 
@@ -324,69 +326,19 @@ private:
 };
 
 
-void generateRandomNoise(double tau, int num_sv, double* random_noise) {
-    double dt = 1.0;
-    double scaling_factor = sqrt((1.0 - exp(-2.0 * dt / tau)));
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    double sig_mat = 1.2; // arbitrary
-    std::normal_distribution<double> distribution(0.0, double(sig_mat * scaling_factor));
-
-    for(int i=0; i< num_sv; i++) {
-        random_noise[i] = distribution(gen);  // Random noise value
-    }
-
-}
-
-template <typename T>
-void TimeCorrelateMeasurementNoise(double tau, const T* previous_noise, const T* random_noise,  T* current_noise_est, int num_sv) {
-
-    double dt = 1.0;
-
-    for(int i=0; i<num_sv; i++) {
-
-        // current_noise_est[i] = exp(-dt / tau) * previous_noise[i] + T(random_noise[i]);
-        // current_noise_est[i] = previous_noise[i];
-        current_noise_est[i] =  exp(-dt / tau) * previous_noise[i];
-        
-    }
-    // cout<<endl;
-
-}
-
 
 class TimeCorrelationFactorCostFunctor {
     public:
-        TimeCorrelationFactorCostFunctor(double tau, double weight, int num_var_meas, double* random_noise)
-            :tau_(tau), weight_(weight), num_var_meas_(num_var_meas), random_noise_(random_noise) {}
+        TimeCorrelationFactorCostFunctor(double tau, double weight)
+            :tau_(tau), weight_(weight) {}
 
         template <typename T>
         bool operator()(const T* const previous_noise, const T* const current_noise, T* residual) const {
-            T random_noise_T[num_var_meas_];
-            for (int i = 0; i < num_var_meas_; i++) {
-                random_noise_T[i] = T(random_noise_[i]);  // Convert `double` to `T` type
-            }
-            // T* current_noise_est = new T[num_var_meas_]; 
-            T current_noise_est[num_var_meas_];
-            TimeCorrelateMeasurementNoise(tau_, previous_noise, random_noise_T, current_noise_est, num_var_meas_);
-            T diff = T(0.0);
 
-            for (int i=0; i<num_var_meas_; i++){
-                diff += (current_noise[i] - current_noise_est[i]) * (current_noise[i] - current_noise_est[i]);
-                std::cout << current_noise[i] << " ";
-            }
-
-
-            std::cout << "Current noise : ";
-            for (int i=0; i<num_var_meas_; i++){
-                std::cout << current_noise[i] << " ";
-            }
-            std::cout << endl;
-
-
-            residual[0] = sqrt(diff) * T(sqrt(weight_));
-            // std::cout << residual[0] << endl;
-
+            T* current_noise_est = new T[1]; 
+            double dt = 1.0;
+            current_noise_est[0] = exp(-dt / tau_)*previous_noise[0];
+            residual[0] = abs(current_noise[0] - current_noise_est[0]) * T(sqrt(weight_));
 
             return true;
         }
@@ -394,8 +346,7 @@ class TimeCorrelationFactorCostFunctor {
     private:
         const double tau_;
         const double weight_;
-        const int num_var_meas_;
-        const double* random_noise_;
+
 };
 
 

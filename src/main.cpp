@@ -240,68 +240,19 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     current_noise = new double[num_var_meas];
     std::fill(current_position, current_position + num_var_pos, 0.0); 
     std::fill(current_noise, current_noise + num_var_meas, 0.01);
-    double* random_noise = nullptr;
-    random_noise = new double[num_var_meas];
 
 
     for(size_t epoch=start_epoch; epoch < max_epoch; ++epoch){
 
         previous_position = current_position;
         previous_noise = current_noise;
-        // current_position = new double[num_var_pos];
-        // std::cout << endl;
-
-        // previous_noise = current_noise;
-        // current_noise = new double[num_var_meas];
-        current_position = new double[num_var_pos];
-        current_noise = new double[num_var_meas];
         
+        current_position = new double[num_var_pos];
+        current_noise = new double[num_var_meas];        
         for(int i=0; i<num_var_pos; i++) // initial values
             current_position[i] = previous_position[i];  
         for(int i=0; i<num_var_meas; i++)
             current_noise[i] = previous_noise[i]; 
-
-
-        // init value
-        // if (epoch == start_epoch) {
-        //     std::fill(current_position, current_position + num_var_pos, 0.0); 
-        //     std::fill(current_noise, current_noise + num_var_meas, 0.1);
-        //     // previous_noise = new double[num_var_meas];
-        //     // std::fill(previous_noise, previous_noise + num_var_meas, 0.1);
-        //     std::fill(previous_position, previous_position + num_var_pos, 0.0); 
-        //     std::fill(previous_noise, previous_noise + num_var_meas, 0.1);
-        // }
-        // else {
-            // for(int i=0; i<num_var_pos; i++) // initial values
-            //     current_position[i] = previous_position[i];  
-            // for(int i=0; i<num_var_meas; i++)
-            //     current_noise[i] = previous_noise[i]; 
-
-        // }
-        // std::cout << "Epoch-" << epoch << " current noise:  "<< current_noise[0] << endl;
-
-
-        // if (use_tau && (epoch > start_epoch)) {        
-        if (use_tau) {  
-
-            factor::generateRandomNoise(tau, num_var_meas, random_noise);
-            std::cout<< "Epoch "<< epoch << "Random Noise ";
-            for (int i = 0; i < num_var_meas; i++)
-                std::cout << random_noise[i] << " ";
-            std::cout << std::endl;
-            
-
-
-            factor::TimeCorrelationFactorCostFunctor* functor = 
-                new factor::TimeCorrelationFactorCostFunctor(tau, tau_weight, num_var_meas, random_noise);
-            ceres::CostFunction* cost_function =
-                new ceres::AutoDiffCostFunction<factor::TimeCorrelationFactorCostFunctor, 1, num_var_meas, num_var_meas>(functor);
-            // problem.AddResidualBlock(cost_function, nullptr, previous_noise, current_noise);
-            
-            // // state.push_back(current_noise);
-            noise_states.push_back(current_noise);
-            
-        }
 
         
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
@@ -323,10 +274,18 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
             if(constellation_type.find(satellite_type) == constellation_type.end()){
                 continue;   
             }
-
-            
             double pr_value = pr_data[epoch][satellite];
             double pr_value_station = pr_data_station[epoch][satellite];
+ 
+
+            if (use_tau) {  
+    
+                factor::TimeCorrelationFactorCostFunctor* functor = 
+                    new factor::TimeCorrelationFactorCostFunctor(tau, tau_weight);
+                ceres::CostFunction* cost_function =
+                    new ceres::AutoDiffCostFunction<factor::TimeCorrelationFactorCostFunctor, 1, 1, 1>(functor);
+                problem.AddResidualBlock(cost_function, nullptr, &previous_noise[satellite], &current_noise[satellite]);
+            }
 
             if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station) && !check_sv_data(sv_pos_data[epoch][satellite])){
 
@@ -335,10 +294,10 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
                                                                 pr_value-pr_value_station, satellite_type, df_pr_weight, satellite);
 
                 ceres::CostFunction* cost_function =
-                    new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, num_var_pos, num_var_meas>(functor);
+                    new ceres::AutoDiffCostFunction<factor::DiffPesudorangeFactorCostFunctor, 1, num_var_pos, 1>(functor);
 
 
-                problem.AddResidualBlock(cost_function, nullptr, current_position, current_noise);
+                problem.AddResidualBlock(cost_function, nullptr, current_position, &current_noise[satellite]);
             }
 
 
@@ -383,6 +342,7 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
         }
 
         // state.push_back(current_position);
+        noise_states.push_back(current_noise);
         position_states.push_back(current_position);
     }
     ceres::Solve(options, &problem, &summary);
@@ -413,19 +373,11 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
         covariance_blocks.emplace_back(position, position);
     }
 
-    bool covariance_result = false;
-    // bool covariance_result = covariance.Compute(covariance_blocks, &problem);
-    // std::cout << " =============== Covariance_result: " << covariance_result << " ==============="<< endl;
+    // bool covariance_result = false;
+    bool covariance_result = covariance.Compute(covariance_blocks, &problem);
+    std::cout << " =============== Covariance_result: " << covariance_result << " ==============="<< endl;
+   
     
-    for (size_t epoch = start_epoch; epoch < max_epoch; epoch++) {
-        double* noise = noise_states[epoch - start_epoch];
-
-        std::cout << "Epoch " << epoch << ": Noise: ";
-        for (int i =0; i < num_var_meas ; i++){
-            std::cout << noise[i] << " ";
-        }
-        std::cout << endl;
-    }
     for (size_t epoch = start_epoch; epoch < max_epoch; epoch++) {
         double* position = position_states[epoch - start_epoch];
         std::cout << std::fixed << std::setprecision(6);
@@ -466,14 +418,11 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
                 factor::DiffPesudorangeFactorCostFunctor functor(ref_location, sv_pos_data[epoch][satellite], 
                                                                 pr_value-pr_value_station, satellite_type, df_pr_weight, satellite);
                 double residual[1];
-                functor(position_states[epoch-start_epoch], noise_states[epoch-start_epoch], residual);
+                functor(position_states[epoch-start_epoch], &noise_states[epoch-start_epoch][satellite], residual);
                 
                 df_pr_sum += residual[0] * residual[0];
                 fout_residual_pr << epoch +1 << ", " << satellite+1 << ", "<< residual[0] << endl;
-                std::cout << "Epoch " << epoch << " Final Noise: " << noise_states[epoch-start_epoch][satellite]<< endl;
-                // for (int i = 0; i <num_var_meas ; i ++)
-                //     cout << noise_states[epoch-start_epoch][i] << " ";
-                // cout << endl;
+
             }
             if(use_tdcp &&
                 epoch > start_epoch){
@@ -505,6 +454,10 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
         // std::cout << "pr,"<< epoch + 1 << "," << df_pr_sum << std::endl;
         // if(use_tdcp && epoch > start_epoch)
             // std::cout << "tdcp,"<< epoch + 1 << "," << tdcp_sum << std::endl;
+        cout << "Epoch " << epoch <<" Noise :" ;
+        for (int i = 0; i <num_var_meas ; i ++)
+            cout << noise_states[epoch-start_epoch][i] << " ";
+        cout << endl;
 
         
         if (covariance_result){
@@ -513,11 +466,11 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
             // std::cout << "Covariance Matrix:\n";
             for (int i = 0; i < num_var_pos; i++) {
                 for (int j = 0; j < num_var_pos; j++) {
-                    // std::cout << covariance_matrix[num_var_pos * i + j] << " ";
+                    std::cout << covariance_matrix[num_var_pos * i + j] << " ";
                     fout_cov << covariance_matrix[num_var_pos * i + j] << ", ";
                 }
-                // std::cout << "\n";
-                fout_cov << "\n";
+                std::cout << endl;
+                fout_cov << endl;
             }
         }    
 
@@ -531,11 +484,6 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     fout_residual_pr.close();
     fout_residual_tdcp.close();
 
-    // Clear the state for the next iteration
-    // for (double* pos : state) {
-    //     delete[] pos;
-    // }
-    // state.clear();
     for (double* pos : position_states) {
         delete[] pos;
     }
