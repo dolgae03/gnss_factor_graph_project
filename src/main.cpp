@@ -26,14 +26,18 @@ namespace po = boost::program_options;
 namespace fs = boost::filesystem;
 
 
-#define DF_PR_WEIGHT (double) 1.0/sqrt(2)
-#define TDCP_WEIGHT (double) 50.0/sqrt(2)
+// #define DF_PR_WEIGHT (double) 1.0/sqrt(2)
+// #define TDCP_WEIGHT (double) 50.0/sqrt(2)
+// #define CONSATANT_CLOCK_WEIGHT (double) 0
+// #define TAU_WEIGHT (double) 0.8/sqrt(2)
+
+#define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))*(1/(sqrt(2)*1))
+#define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))*(1/(sqrt(2)*0.02))
 #define CONSATANT_CLOCK_WEIGHT (double) 0
-#define TAU_WEIGHT (double) 0.8/sqrt(2)
+#define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))*(1/(sqrt(2)*0.14))
 
 // std::string rover_dir = "../data/rooftop4/data_rover/";
 // std::string station_dir = "../data/rooftop4/data_station/";
-
 
 
 template <typename T>
@@ -476,9 +480,12 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
         // if(use_tdcp && epoch > start_epoch)
             // std::cout << "tdcp,"<< epoch + 1 << "," << tdcp_sum << std::endl;
         cout << "Epoch " << epoch <<" Noise :" ;
-        for (int i = 0; i <num_var_meas ; i ++)
+        for (int i = 0; i <num_var_meas ; i ++) {
             cout << noise_states[epoch-start_epoch][i] << " ";
+            fout_pr_noise << noise_states[epoch-start_epoch][i] << " ";
+        }
         cout << endl;
+        fout_pr_noise << endl;
 
         
         if (covariance_result){
