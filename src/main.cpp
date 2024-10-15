@@ -26,15 +26,15 @@ namespace po = boost::program_options;
 namespace fs = boost::filesystem;
 
 
-// #define DF_PR_WEIGHT (double) 1.0/sqrt(2)
-// #define TDCP_WEIGHT (double) 50.0/sqrt(2)
-// #define CONSATANT_CLOCK_WEIGHT (double) 0
-// #define TAU_WEIGHT (double) 0.8/sqrt(2)
-
-#define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))*(1/(sqrt(2)*1))
-#define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))*(1/(sqrt(2)*0.02))
+#define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))
+#define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))
 #define CONSATANT_CLOCK_WEIGHT (double) 0
-#define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))*(1/(sqrt(2)*0.14))
+#define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))
+
+// #define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))*(1/(sqrt(2)*1))
+// #define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))*(1/(sqrt(2)*0.02))
+// #define CONSATANT_CLOCK_WEIGHT (double) 0
+// #define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))*(1/(sqrt(2)*0.14))
 
 // std::string rover_dir = "../data/rooftop4/data_rover/";
 // std::string station_dir = "../data/rooftop4/data_station/";
@@ -76,7 +76,7 @@ bool parseCommandLineOptions(int argc, char* argv[],
             ("tdcp-weight", po::value<double>(&tdcp_weight)->default_value(TDCP_WEIGHT), "Set TDCP weight")
             ("clock-const-weight", po::value<double>(&clock_const_weight)->default_value(CONSATANT_CLOCK_WEIGHT), "Set Clock Const weight")
             ("tau-weight", po::value<double>(&tau_weight)->default_value(TAU_WEIGHT), "Set Tau weight")
-            ("start-epoch", po::value<size_t>(&start_epoch)->default_value(600), "Set start epoch (default 599)")
+            ("start-epoch", po::value<size_t>(&start_epoch)->default_value(1), "Set start epoch (default 1)")
             ("T", po::value<size_t>(&T)->default_value(100), "Set T value (default 100)")
             ("constellations", po::value<std::vector<std::string>>(&constellations)->multitoken()->default_value(std::vector<std::string>{"gps"}, "gps"), 
                 "Set GPS constellations (gps, bds, gal)");
@@ -133,7 +133,7 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
 
     cout << "=========================== Version " << version +1 <<" Starts ==========================="<< endl;
     std::string tau_str = "/tau_" + std::to_string(tau);
-    std::string folder_name = matlab_save_dir + "/monte_carlo"+tau_str+"/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
+    std::string folder_name = matlab_save_dir + "/monte_carlo"+tau_str + "/";
     std::string version_str = "/v" + std::to_string(version+1);  // version 1 to 100
     std::string rover_dir = "../data/monte_carlo" +tau_str + "/data_rover" + version_str;
     std::string station_dir = "../data/monte_carlo" +tau_str + "/data_base" + version_str;
@@ -156,17 +156,23 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     // std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
     std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(station_dir + time_file);
 
+    std::ostringstream label_pr, label_tdcp, label_clock, label_tau;
+    label_pr << std::fixed << std::setprecision(2) << df_pr_weight;
+    label_tdcp << std::fixed << std::setprecision(2) << tdcp_weight;
+    label_clock << std::fixed << std::setprecision(2) << clock_const_weight;
+    label_tau << std::fixed << std::setprecision(2) << tau_weight;
+
     if (use_df_pr)
-        folder_name += "_dfpr_" + std::to_string(df_pr_weight);
+        folder_name += "pr_" + label_pr.str();
     
     if (use_tdcp)
-        folder_name += "_tdcp_" + std::to_string(tdcp_weight);
+        folder_name += "_tdcp_" + label_tdcp.str();
     
     if (use_clock_const)
-        folder_name += "_clockconst_" + std::to_string(clock_const_weight);
+        folder_name += "_clockconst_" + label_clock.str();
 
     if (use_tau)
-        folder_name += "_tauWeight_" + std::to_string(tau_weight); 
+        folder_name += "_tauWeight_" + label_tau.str(); 
 
     std::string folder_name_version = folder_name + version_str;
     // 폴더 생성
@@ -202,9 +208,11 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     fout_ecef  << std::fixed << std::setprecision(10);
     fout_llh  << std::fixed << std::setprecision(10);
     fout_cov  << std::fixed << std::setprecision(10);
-    fout_residual_pr  << std::fixed << std::setprecision(6);
-    fout_residual_tdcp  << std::fixed << std::setprecision(6);
+    fout_residual_pr  << std::fixed << std::setprecision(10);
+    fout_residual_tdcp  << std::fixed << std::setprecision(10);
     fout_pr_noise  << std::fixed << std::setprecision(10);
+
+    
 
     std::vector<double * > state;
     std::vector<double * > position_states;
@@ -381,7 +389,7 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     ceres::CRSMatrix crs_jacobian;   // Compressed Row Storage (CRS) matrix for the Jacobian
     double* cost = nullptr;
     // Evaluate the problem to extract residuals and Jacobian
-    problem.Evaluate(eval_options, cost, &residuals, nullptr, &crs_jacobian);
+    // problem.Evaluate(eval_options, cost, &residuals, nullptr, &crs_jacobian);
 
 
     // Print the size of the Jacobian matrix
@@ -406,7 +414,7 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     for (size_t epoch = start_epoch; epoch < max_epoch; epoch++) {
         double* position = position_states[epoch - start_epoch];
         std::cout << std::fixed << std::setprecision(6);
-        std::cout << "Epoch(ECEF) " << epoch << ": " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
+        // std::cout << "Epoch  " << epoch << "State : " << position[0] << ", " << position[1] << ", " << position[2] << ", " << position[3] << "\n";
         fout_ecef << epoch;
         for(int i=0; i<num_var_pos; i++) {
             fout_ecef << ", " << position[i];
@@ -416,7 +424,7 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
         std::vector<double> res = coordinate::ecef2lla(ecef_position);
 
         // std::cout << "Epoch(LLA) " << epoch << ": " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
-        // fout_llh << epoch << ", " << res[0] << ", " << res[1] << ", " << res[2] << "\n";
+        fout_llh << epoch << ", " << res[0] << ", " << res[1] << ", " << res[2] << endl;
         double df_pr_sum = 0;
         double tdcp_sum = 0;
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
@@ -479,12 +487,12 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
         // std::cout << "pr,"<< epoch + 1 << "," << df_pr_sum << std::endl;
         // if(use_tdcp && epoch > start_epoch)
             // std::cout << "tdcp,"<< epoch + 1 << "," << tdcp_sum << std::endl;
-        cout << "Epoch " << epoch <<" Noise :" ;
+        // cout << "Epoch " << epoch <<" Noise :" ;
         for (int i = 0; i <num_var_meas ; i ++) {
-            cout << noise_states[epoch-start_epoch][i] << " ";
+            // cout << noise_states[epoch-start_epoch][i] << " ";
             fout_pr_noise << noise_states[epoch-start_epoch][i] << " ";
         }
-        cout << endl;
+        // cout << endl;
         fout_pr_noise << endl;
 
         
@@ -494,10 +502,10 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
             // std::cout << "Covariance Matrix:\n";
             for (int i = 0; i < num_var_pos; i++) {
                 for (int j = 0; j < num_var_pos; j++) {
-                    std::cout << covariance_matrix[num_var_pos * i + j] << " ";
+                    // std::cout << covariance_matrix[num_var_pos * i + j] << " ";
                     fout_cov << covariance_matrix[num_var_pos * i + j] << ", ";
                 }
-                std::cout << endl;
+                // std::cout << endl;
                 fout_cov << endl;
             }
         }    
@@ -548,7 +556,11 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;  // 옵션 파싱 실패 또는 도움말 출력 시 프로그램 종료
     }
 
-    
+    double tau = 0;
+    // double tau = 100;
+
+    if (tau == 0)
+        use_tau = false;
 
     // 프로그램 로직이 여기에 들어갑니다.
     // 예시 출력
@@ -573,11 +585,8 @@ int main(int argc, char** argv) {
     std::string matlab_save_dir = "/mnt/c/jaeryoung/research/factor_graph/fgo_basic/error_simulation/result/result_ceres/" ;
     // std::string folder_name = matlab_save_dir + constellation_name +"/rooftop4"+ "/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
     
-    // double tau = 0;
-    double tau = 100;
     
-
-    int version_num = 1;
+    int version_num = 100;
 
     for (int version = 0; version < version_num; version++) {
         runOptimization(tau, version, matlab_save_dir, start_epoch, T, use_df_pr, use_tdcp, use_clock_const, use_tau, df_pr_weight, tdcp_weight, clock_const_weight, tau_weight, constellation_type, constellation_name);
