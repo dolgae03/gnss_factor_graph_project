@@ -58,6 +58,7 @@ bool parseCommandLineOptions(int argc, char* argv[],
                              double& tdcp_weight, 
                              double& clock_const_weight,
                              double& tau_weight,
+                             double& tau,
                              size_t& start_epoch,
                              size_t& T,
                              std::set<int>& constellation_type,
@@ -76,6 +77,7 @@ bool parseCommandLineOptions(int argc, char* argv[],
             ("tdcp-weight", po::value<double>(&tdcp_weight)->default_value(TDCP_WEIGHT), "Set TDCP weight")
             ("clock-const-weight", po::value<double>(&clock_const_weight)->default_value(CONSATANT_CLOCK_WEIGHT), "Set Clock Const weight")
             ("tau-weight", po::value<double>(&tau_weight)->default_value(TAU_WEIGHT), "Set Tau weight")
+            ("tau", po::value<double>(&tau)->default_value(0), "Set Tau")
             ("start-epoch", po::value<size_t>(&start_epoch)->default_value(1), "Set start epoch (default 1)")
             ("T", po::value<size_t>(&T)->default_value(100), "Set T value (default 100)")
             ("constellations", po::value<std::vector<std::string>>(&constellations)->multitoken()->default_value(std::vector<std::string>{"gps"}, "gps"), 
@@ -90,6 +92,10 @@ bool parseCommandLineOptions(int argc, char* argv[],
             std::cout << desc << "\n";
             return false;  // 도움말 출력 후 false 반환
         }
+
+        if (tau == 0)
+            use_tau = false;
+
 
         start_epoch = start_epoch - 1;
         std::sort(constellations.begin(), constellations.end());
@@ -129,11 +135,12 @@ bool parseCommandLineOptions(int argc, char* argv[],
     return true;
 }
 
-int runOptimization(int tau, int version, const std::string& matlab_save_dir, size_t start_epoch, size_t T, bool use_df_pr, bool use_tdcp, bool use_clock_const,  bool use_tau, double df_pr_weight, double tdcp_weight, double clock_const_weight, double tau_weight, const std::set<int>& constellation_type, const std::string& constellation_name) {
+int runOptimization(double tau, int version, const std::string& matlab_save_dir, size_t start_epoch, size_t T, bool use_df_pr, bool use_tdcp, bool use_clock_const,  bool use_tau, double df_pr_weight, double tdcp_weight, double clock_const_weight, double tau_weight, const std::set<int>& constellation_type, const std::string& constellation_name) {
 
     cout << "=========================== Version " << version +1 <<" Starts ==========================="<< endl;
-    std::string tau_str = "/tau_" + std::to_string(tau);
-    std::string folder_name = matlab_save_dir + "/monte_carlo"+tau_str + "/";
+    // std::string tau_str = "/tau_" + std::to_string(int(tau));
+    std::string tau_str = "/constSig_tau_" + std::to_string(int(tau));
+    std::string folder_name = matlab_save_dir + "/monte_carlo"+ tau_str + "/";
     std::string version_str = "/v" + std::to_string(version+1);  // version 1 to 100
     std::string rover_dir = "../data/monte_carlo" +tau_str + "/data_rover" + version_str;
     std::string station_dir = "../data/monte_carlo" +tau_str + "/data_base" + version_str;
@@ -150,18 +157,16 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     std::vector<std::vector<std::vector<double>>> sv_pos_data = readSVPosAndVelCSV(rover_dir + sv_pos_file);
     // std::vector<std::vector<std::vector<double>>> sv_vel_data = readSVPosAndVelCSV(rover_dir + sv_vel_file);
     std::vector<std::pair<int, double>> time_data = readGpsTimeCSV(rover_dir + time_file);
-
+ 
     std::vector<std::vector<double>> pr_data_station = readPseudorangeCSV(station_dir + pr_file);
     std::vector<std::vector<std::vector<double>>> sv_pos_data_station = readSVPosAndVelCSV(station_dir + sv_pos_file);
     // std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
     std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(station_dir + time_file);
-
     std::ostringstream label_pr, label_tdcp, label_clock, label_tau;
     label_pr << std::fixed << std::setprecision(2) << df_pr_weight;
     label_tdcp << std::fixed << std::setprecision(2) << tdcp_weight;
     label_clock << std::fixed << std::setprecision(2) << clock_const_weight;
     label_tau << std::fixed << std::setprecision(2) << tau_weight;
-
     if (use_df_pr)
         folder_name += "pr_" + label_pr.str();
     
@@ -191,7 +196,6 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     std::string log_file_residual_pr = folder_name_version + "/residual_pr.csv";
     std::string log_file_residual_tdcp = folder_name_version + "/residual_tdcp.csv";
     std::string log_file_pr_noise = folder_name_version + "/pr_noise.csv";
-
     // log results
     std::ofstream fout_ecef(log_file_ecef);
     std::ofstream fout_llh(log_file_llh);
@@ -199,7 +203,7 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     std::ofstream fout_residual_pr(log_file_residual_pr);
     std::ofstream fout_residual_tdcp(log_file_residual_tdcp);
     std::ofstream fout_pr_noise(log_file_pr_noise);
-
+    
     fout_ecef << "Epoch, Position X(m), Position Y(m), Position Z(m), Clk Bias(s)-GPS\n";
     fout_llh << "Epoch, Latitude, Longitude, Altitude\n";
     fout_residual_pr << "Epoch, SV, Pr_residual" << endl;
@@ -227,7 +231,6 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     const size_t num_var_meas = 7; // set arbitrarily for now
     const size_t max_epoch = start_epoch + T; 
 
-
     // Solver 옵션 설정 및 실행
     ceres::Solver::Summary summary;
 
@@ -240,7 +243,6 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     options.function_tolerance = 1e-12;  // 'FunctionTolerance'를 더 엄격하게
     options.gradient_check_numeric_derivative_relative_step_size = 1e-13;  // 'FiniteDifferenceStepSize'를 더 엄격하게
     options.max_num_iterations = 1e+5;  // 'MaxIterations'를 늘려 더 많은 반복 허용
-
     std::string option_err;
     if(!options.IsValid(&option_err)){
         cout << option_err<< endl;
@@ -257,12 +259,10 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
     std::fill(current_position, current_position + num_var_pos, 0.0); 
     std::fill(current_noise, current_noise + num_var_meas, 0.0);
 
-
     for(size_t epoch=start_epoch; epoch < max_epoch; ++epoch){
 
         previous_position = current_position;
         previous_noise = current_noise;
-        
         current_position = new double[num_var_pos];
         current_noise = new double[num_var_meas];        
         for(int i=0; i<num_var_pos; i++) // initial values
@@ -270,9 +270,7 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
         for(int i=0; i<num_var_meas; i++)
             current_noise[i] = previous_noise[i]; 
 
-        
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
-
             int satellite_type;
 
             if (satellite < 32) // GPS
@@ -285,7 +283,6 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
                 satellite_type = 1;
             else
                 assert(false);
-
 
             if(constellation_type.find(satellite_type) == constellation_type.end()){
                 continue;   
@@ -315,7 +312,6 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
                 }
 
             } else {
-
                 if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station) && !check_sv_data(sv_pos_data[epoch][satellite])){
 
                       factor::DiffPesudorangeFactorCostFunctor* functor_pr = 
@@ -333,7 +329,7 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
             }
         
 
-
+            cout << "DEBUG 10" << endl;
 
             if(use_tdcp &&
                 epoch > start_epoch){
@@ -540,7 +536,7 @@ int main(int argc, char** argv) {
     /*Define Input Factor*/
 
     bool use_df_pr, use_tdcp, use_clock_const, use_tau;
-    double df_pr_weight, tdcp_weight, clock_const_weight, tau_weight;
+    double df_pr_weight, tdcp_weight, clock_const_weight, tau_weight, tau;
     const double CONST_C = 299792458.0;
 
     size_t start_epoch, T;
@@ -550,17 +546,12 @@ int main(int argc, char** argv) {
 
     if (!parseCommandLineOptions(argc, argv, 
                                 use_df_pr, use_tdcp, use_clock_const, use_tau,
-                                df_pr_weight, tdcp_weight, clock_const_weight, tau_weight,
+                                df_pr_weight, tdcp_weight, clock_const_weight, tau_weight, tau,
                                 start_epoch, T,
                                 constellation_type, constellation_name)) {
         return EXIT_FAILURE;  // 옵션 파싱 실패 또는 도움말 출력 시 프로그램 종료
     }
 
-    double tau = 0;
-    // double tau = 100;
-
-    if (tau == 0)
-        use_tau = false;
 
     // 프로그램 로직이 여기에 들어갑니다.
     // 예시 출력
@@ -572,6 +563,7 @@ int main(int argc, char** argv) {
     std::cout << "TDCP weight: " << tdcp_weight << "\n";
     std::cout << "Clock Const weight: " << clock_const_weight << "\n";
     std::cout << "Tau weight: " << tau_weight << "\n";
+    std::cout << "Tau: " << tau << "\n";
     std::cout << "Start epoch: " << start_epoch << "\n";
     std::cout << "T: " << T << "\n";
 
