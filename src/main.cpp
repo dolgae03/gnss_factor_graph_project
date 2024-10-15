@@ -26,15 +26,15 @@ namespace po = boost::program_options;
 namespace fs = boost::filesystem;
 
 
-#define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))
-#define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))
-#define CONSATANT_CLOCK_WEIGHT (double) 0
-#define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))
-
-// #define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))*(1/(sqrt(2)*1))
-// #define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))*(1/(sqrt(2)*0.02))
+// #define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))
+// #define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))
 // #define CONSATANT_CLOCK_WEIGHT (double) 0
-// #define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))*(1/(sqrt(2)*0.14))
+// #define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))
+
+#define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))*(1/(sqrt(2)*1))
+#define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))*(1/(sqrt(2)*0.02))
+#define CONSATANT_CLOCK_WEIGHT (double) 0
+#define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))*(1/(sqrt(2)*0.14))
 
 // std::string rover_dir = "../data/rooftop4/data_rover/";
 // std::string station_dir = "../data/rooftop4/data_station/";
@@ -135,7 +135,10 @@ bool parseCommandLineOptions(int argc, char* argv[],
     return true;
 }
 
-int runOptimization(double tau, int version, const std::string& matlab_save_dir, size_t start_epoch, size_t T, bool use_df_pr, bool use_tdcp, bool use_clock_const,  bool use_tau, double df_pr_weight, double tdcp_weight, double clock_const_weight, double tau_weight, const std::set<int>& constellation_type, const std::string& constellation_name) {
+int runOptimization(double tau, int version, const std::string& matlab_save_dir, size_t start_epoch, size_t T, 
+                    bool use_df_pr, bool use_tdcp, bool use_clock_const,  bool use_tau, 
+                    double df_pr_weight, double tdcp_weight, double clock_const_weight, double tau_weight, 
+                    const std::set<int>& constellation_type, const std::string& constellation_name) {
 
     cout << "=========================== Version " << version +1 <<" Starts ==========================="<< endl;
     // std::string tau_str = "/tau_" + std::to_string(int(tau));
@@ -327,9 +330,7 @@ int runOptimization(double tau, int version, const std::string& matlab_save_dir,
 
 
             }
-        
-
-            cout << "DEBUG 10" << endl;
+    
 
             if(use_tdcp &&
                 epoch > start_epoch){
@@ -581,7 +582,10 @@ int main(int argc, char** argv) {
     int version_num = 100;
 
     for (int version = 0; version < version_num; version++) {
-        runOptimization(tau, version, matlab_save_dir, start_epoch, T, use_df_pr, use_tdcp, use_clock_const, use_tau, df_pr_weight, tdcp_weight, clock_const_weight, tau_weight, constellation_type, constellation_name);
+        runOptimization(tau, version, matlab_save_dir, start_epoch, T, 
+                        use_df_pr, use_tdcp, use_clock_const, use_tau, 
+                        df_pr_weight, tdcp_weight, clock_const_weight, tau_weight, 
+                        constellation_type, constellation_name);
     }
 
     return 0;
