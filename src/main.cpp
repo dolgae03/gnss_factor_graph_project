@@ -25,8 +25,8 @@ namespace po = boost::program_options;
 namespace fs = boost::filesystem;
 
 
-#define DF_PR_WEIGHT (double) 1.0/sqrt(2)
-#define TDCP_WEIGHT (double) 50.0/sqrt(2)
+#define DF_PR_WEIGHT (double) (1.0/sqrt(2))*(1.0/sqrt(2))
+#define TDCP_WEIGHT (double) (50.0/sqrt(2))*(50.0/sqrt(2))
 #define CONSATANT_CLOCK_WEIGHT (double) 0
 
 // std::string rover_dir = "../data/rooftop4/data_rover/";
@@ -125,8 +125,8 @@ bool parseCommandLineOptions(int argc, char* argv[],
 int runOptimization(int tau, int version, const std::string& matlab_save_dir, size_t start_epoch, size_t T, bool use_df_pr, bool use_tdcp, bool use_clock_const, double df_pr_weight, double tdcp_weight, double clock_const_weight, const std::set<int>& constellation_type, const std::string& constellation_name) {
 
     cout << "=========================== Version " << version +1 <<" Starts ==========================="<< endl;
-    std::string tau_str = "/tau_" + std::to_string(tau);
-    std::string folder_name = matlab_save_dir + "/monte_carlo"+tau_str+"/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
+    std::string tau_str = "/constSig_tau_" + std::to_string(tau);
+    std::string folder_name = matlab_save_dir + "/monte_carlo"+ tau_str+"/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
     std::string version_str = "/v" + std::to_string(version+1);  // version 1 to 100
     std::string rover_dir = "../data/monte_carlo" +tau_str + "/data_rover" + version_str;
     std::string station_dir = "../data/monte_carlo" +tau_str + "/data_base" + version_str;
@@ -200,7 +200,8 @@ int runOptimization(int tau, int version, const std::string& matlab_save_dir, si
 
     // std::vector<double> ref_location = coordinate::lla2ecef({36.372371713580250, 127.358800510185191, 91.642377777777796});
     // std::vector<double> ref_location = {-3.119992580788137e+06, 4.086868171897103e+06, 3.761594895585738e+06}; // rooftop4
-    std::vector<double> ref_location = coordinate::lla2ecef({36.3727470000000, 127.357671000000, 10}); //monte-carlo
+    // std::vector<double> ref_location = coordinate::lla2ecef({36.3727470000000, 127.357671000000, 10}); //monte-carlo
+    std::vector<double> ref_location = {-3.119857169546223e+06,   4.086857741848765e+06,   3.761579979559745e+06,};
 
     const size_t val_num = 4; // x, y ,z, t_gps, t_glo,
     const size_t max_epoch = start_epoch + T; 
@@ -508,13 +509,13 @@ int main(int argc, char** argv) {
     std::string matlab_save_dir = "/mnt/c/jaeryoung/research/factor_graph/fgo_basic/error_simulation/result/result_ceres/" ;
     // std::string folder_name = matlab_save_dir + constellation_name +"/rooftop4"+ "/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
     
-    // int tau = 0;
-    int tau = 100;
+    int tau = 0;
+    // int tau = 100;
     
 
-    int version_num = 100;
+    int version_num = 44;
 
-    for (int version = 0; version < version_num; version++) {
+    for (int version = 43; version < version_num; version++) {
         runOptimization(tau, version, matlab_save_dir, start_epoch, T, use_df_pr, use_tdcp, use_clock_const, df_pr_weight, tdcp_weight, clock_const_weight, constellation_type, constellation_name);
     }
 
