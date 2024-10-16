@@ -228,7 +228,7 @@ int runOptimization(double tau, int version, const std::string& matlab_save_dir,
 
     // std::vector<double> ref_location = coordinate::lla2ecef({36.372371713580250, 127.358800510185191, 91.642377777777796});
     // std::vector<double> ref_location = {-3.119992580788137e+06, 4.086868171897103e+06, 3.761594895585738e+06}; // rooftop4
-    std::vector<double> ref_location = coordinate::lla2ecef({36.3727470000000, 127.357671000000, 10}); //monte-carlo
+    std::vector<double> ref_location = {-3.119857169546223e+06,   4.086857741848765e+06,   3.761579979559745e+06,}; // rooftop4
 
     const size_t num_var_pos = 4; // x, y ,z, t_gps, t_glo,
     const size_t num_var_meas = 7; // set arbitrarily for now

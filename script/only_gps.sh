@@ -18,6 +18,10 @@ make
 # ./ceres_solver_gnss --constellation gps --tau-weight 100 --start-epoch 1 --T 100  
 # ./ceres_solver_gnss --constellation gps  --start-epoch 1 --T 100  # time correlation factor 고려
 
-# ./ceres_solver_gnss --disable-tau --tau 0
+./ceres_solver_gnss --disable-tau --tau 0
 # ./ceres_solver_gnss --disable-tau --tau 100
-./ceres_solver_gnss --tau 100
+# ./ceres_solver_gnss --tau 100
+
+# ./ceres_solver_gnss --tau 100 
+
+# ./ceres_solver_gnss --tau 100 --disable-tdcp
