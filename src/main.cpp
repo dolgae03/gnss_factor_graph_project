@@ -125,7 +125,8 @@ bool parseCommandLineOptions(int argc, char* argv[],
 int runOptimization(int tau, int version, const std::string& matlab_save_dir, size_t start_epoch, size_t T, bool use_df_pr, bool use_tdcp, bool use_clock_const, double df_pr_weight, double tdcp_weight, double clock_const_weight, const std::set<int>& constellation_type, const std::string& constellation_name) {
 
     cout << "=========================== Version " << version +1 <<" Starts ==========================="<< endl;
-    std::string tau_str = "/constSig_tau_" + std::to_string(tau);
+    // std::string tau_str = "/constSig_tau_" + std::to_string(tau);
+    std::string tau_str = "/tau_" + std::to_string(tau);
     std::string folder_name = matlab_save_dir + "/monte_carlo"+ tau_str+"/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
     std::string version_str = "/v" + std::to_string(version+1);  // version 1 to 100
     std::string rover_dir = "../data/monte_carlo" +tau_str + "/data_rover" + version_str;
@@ -513,10 +514,13 @@ int main(int argc, char** argv) {
     // int tau = 100;
     
 
-    int version_num = 44;
+    int version_num = 100;
 
-    for (int version = 43; version < version_num; version++) {
-        runOptimization(tau, version, matlab_save_dir, start_epoch, T, use_df_pr, use_tdcp, use_clock_const, df_pr_weight, tdcp_weight, clock_const_weight, constellation_type, constellation_name);
+    for (int version = 0; version < version_num; version++) {
+        runOptimization(tau, version, matlab_save_dir, start_epoch, T, 
+                        use_df_pr, use_tdcp, use_clock_const, 
+                        df_pr_weight, tdcp_weight, clock_const_weight, 
+                        constellation_type, constellation_name);
     }
 
     return 0;
