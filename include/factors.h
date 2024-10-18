@@ -239,12 +239,12 @@ class TDCPFactorCostFunctor {
 public:
     TDCPFactorCostFunctor(const std::vector<double>& sv_position_prev,
                           const std::vector<double>& sv_position_curr,
-                          double pseudorange,
+                          double tdcp_measure,
                           int satellite_type,
                           double weight)
         : sv_position_prev_(sv_position_prev),
           sv_position_curr_(sv_position_curr),
-          pseudorange_(pseudorange),
+          tdcp_measure_(tdcp_measure),
           satellite_type_(satellite_type),
           weight_(weight) {}
 
@@ -270,35 +270,22 @@ public:
         }     
 
 
-        T los_vector_prev[3];
-        T los_vector_curr[3];
-        CalculateLOS(prev_state, sv_position_prev_rot, los_vector_prev);
-        CalculateLOS(curr_state, sv_position_curr_rot, los_vector_curr);
-
-        T range_prev = T(0);
-        for(int i=0; i<3; i++)
-            range_prev += (prev_state[i] - sv_position_prev_rot[i]) * (prev_state[i] - sv_position_prev_rot[i]);
-        range_prev = ceres::sqrt(range_prev);
-
-        T range_curr = T(0);
-        for(int i=0; i<3; i++)
-            range_curr += (curr_state[i] - sv_position_curr_rot[i]) * (curr_state[i] - sv_position_curr_rot[i]);
-        range_curr = ceres::sqrt(range_curr);
+        T range_prev = computeRange(prev_state, sv_position_prev_rot);
+        T range_curr= computeRange(curr_state, sv_position_curr_rot);
 
         T clock_bias_diff = (curr_state[3 + satellite_type_] - prev_state[3 + satellite_type_]);
         T tdcp_pred = range_curr - range_prev + clock_bias_diff;
         
 
         // T tdcp_measure = (T(c) / L1_frequency) * T(pseudorange_);
-        T tdcp_measure = T(pseudorange_);
-        residual[0] = (tdcp_pred - tdcp_measure) * T(sqrt(weight_));
+        residual[0] = (tdcp_pred - T(tdcp_measure_)) * T(sqrt(weight_));
         return true;
     }
 
 private:
     std::vector<double> sv_position_prev_;
     std::vector<double> sv_position_curr_;
-    double pseudorange_;
+    double tdcp_measure_;
     int satellite_type_;
     double weight_;
 };

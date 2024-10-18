@@ -31,6 +31,11 @@ namespace fs = boost::filesystem;
 // #define CONSATANT_CLOCK_WEIGHT (double) 0
 // #define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))
 
+// #define DF_PR_WEIGHT (double) (1/(1))*(1/(1))
+// #define TDCP_WEIGHT (double) (1/(0.02))*(1/(0.02))
+// #define CONSATANT_CLOCK_WEIGHT (double) 0
+// #define TAU_WEIGHT (double) (1/(0.14))*(1/(0.14))
+
 #define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))*(1/(sqrt(2)*1))
 #define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))*(1/(sqrt(2)*0.02))
 #define CONSATANT_CLOCK_WEIGHT (double) 0
@@ -93,7 +98,7 @@ bool parseCommandLineOptions(int argc, char* argv[],
             return false;  // 도움말 출력 후 false 반환
         }
 
-        if (tau == 0)
+        if ((tau == 0) || (tau_weight == 0.0))
             use_tau = false;
 
 
@@ -135,18 +140,18 @@ bool parseCommandLineOptions(int argc, char* argv[],
     return true;
 }
 
-int runOptimization(double tau, int version, const std::string& matlab_save_dir, size_t start_epoch, size_t T, 
+int runOptimization(double tau, int seed, const std::string& matlab_save_dir, size_t start_epoch, size_t T, 
                     bool use_df_pr, bool use_tdcp, bool use_clock_const,  bool use_tau, 
                     double df_pr_weight, double tdcp_weight, double clock_const_weight, double tau_weight, 
                     const std::set<int>& constellation_type, const std::string& constellation_name) {
 
-    cout << "=========================== Version " << version +1 <<" Starts ==========================="<< endl;
+    cout << "=========================== Seed " << seed +1 <<" Starts ==========================="<< endl;
     // std::string tau_str = "/tau_" + std::to_string(int(tau));
-    std::string tau_str = "/constSig_tau_" + std::to_string(int(tau));
+    std::string tau_str = "/constSig_v2_tau_" + std::to_string(int(tau));
     std::string folder_name = matlab_save_dir + "/monte_carlo"+ tau_str + "/";
-    std::string version_str = "/v" + std::to_string(version+1);  // version 1 to 100
-    std::string rover_dir = "../data/monte_carlo" +tau_str + "/data_rover" + version_str;
-    std::string station_dir = "../data/monte_carlo" +tau_str + "/data_base" + version_str;
+    std::string seed_str = "/seed" + std::to_string(seed+1);  // seed 1 to 100
+    std::string rover_dir = "../data/monte_carlo" +tau_str + "/data_rover" + seed_str;
+    std::string station_dir = "../data/monte_carlo" +tau_str + "/data_base" + seed_str;
 
     std::string pr_file = "/pr.csv";
     std::string ph_file = "/carrier.csv";
@@ -182,23 +187,23 @@ int runOptimization(double tau, int version, const std::string& matlab_save_dir,
     if (use_tau)
         folder_name += "_tauWeight_" + label_tau.str(); 
 
-    std::string folder_name_version = folder_name + version_str;
+    std::string folder_name_seed = folder_name + seed_str;
     // 폴더 생성
-    if (!fs::exists(folder_name_version)) {
-        if (!fs::create_directories(folder_name_version)) {
-            std::cerr << "Error: Could not create directory " << folder_name_version << std::endl;
+    if (!fs::exists(folder_name_seed)) {
+        if (!fs::create_directories(folder_name_seed)) {
+            std::cerr << "Error: Could not create directory " << folder_name_seed << std::endl;
             return EXIT_FAILURE;
         }
     }
 
     // 로그 파일 경로
     
-    std::string log_file_ecef = folder_name_version + "/pos_ecef.csv";
-    std::string log_file_llh = folder_name_version + "/pos_llh.csv";
-    std::string log_file_cov = folder_name_version + "/error_cov.csv";
-    std::string log_file_residual_pr = folder_name_version + "/residual_pr.csv";
-    std::string log_file_residual_tdcp = folder_name_version + "/residual_tdcp.csv";
-    std::string log_file_pr_noise = folder_name_version + "/pr_noise.csv";
+    std::string log_file_ecef = folder_name_seed + "/pos_ecef.csv";
+    std::string log_file_llh = folder_name_seed + "/pos_llh.csv";
+    std::string log_file_cov = folder_name_seed + "/error_cov.csv";
+    std::string log_file_residual_pr = folder_name_seed + "/residual_pr.csv";
+    std::string log_file_residual_tdcp = folder_name_seed + "/residual_tdcp.csv";
+    std::string log_file_pr_noise = folder_name_seed + "/pr_noise.csv";
     // log results
     std::ofstream fout_ecef(log_file_ecef);
     std::ofstream fout_llh(log_file_llh);
@@ -228,7 +233,8 @@ int runOptimization(double tau, int version, const std::string& matlab_save_dir,
 
     // std::vector<double> ref_location = coordinate::lla2ecef({36.372371713580250, 127.358800510185191, 91.642377777777796});
     // std::vector<double> ref_location = {-3.119992580788137e+06, 4.086868171897103e+06, 3.761594895585738e+06}; // rooftop4
-    std::vector<double> ref_location = {-3.119857169546223e+06,   4.086857741848765e+06,   3.761579979559745e+06,}; // rooftop4
+    // std::vector<double> ref_location = {-3.119857169546223e+06,   4.086857741848765e+06,   3.761579979559745e+06}; // constSig_v1
+    std::vector<double> ref_location = coordinate::lla2ecef({36.3727470000000, 127.357671000000, 10}); // constSig_v2
 
     const size_t num_var_pos = 4; // x, y ,z, t_gps, t_glo,
     const size_t num_var_meas = 7; // set arbitrarily for now
@@ -294,7 +300,7 @@ int runOptimization(double tau, int version, const std::string& matlab_save_dir,
             double pr_value_station = pr_data_station[epoch][satellite];
  
 
-            if (use_tau && tau_weight != 0.0) {  
+            if (use_tau) {  
     
                 factor::TimeCorrelationFactorCostFunctor* functor = 
                     new factor::TimeCorrelationFactorCostFunctor(tau, tau_weight);
@@ -579,10 +585,10 @@ int main(int argc, char** argv) {
     // std::string folder_name = matlab_save_dir + constellation_name +"/rooftop4"+ "/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
     
     
-    int version_num = 100;
+    int seed_num = 100;
 
-    for (int version = 0; version < version_num; version++) {
-        runOptimization(tau, version, matlab_save_dir, start_epoch, T, 
+    for (int seed = 0; seed < seed_num; seed++) {
+        runOptimization(tau, seed, matlab_save_dir, start_epoch, T, 
                         use_df_pr, use_tdcp, use_clock_const, use_tau, 
                         df_pr_weight, tdcp_weight, clock_const_weight, tau_weight, 
                         constellation_type, constellation_name);
