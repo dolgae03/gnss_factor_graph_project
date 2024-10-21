@@ -275,6 +275,8 @@ public:
 
         T clock_bias_diff = (curr_state[3 + satellite_type_] - prev_state[3 + satellite_type_]);
         T tdcp_pred = range_curr - range_prev + clock_bias_diff;
+        // T tdcp_pred = range_curr - range_prev;
+
         
 
         // T tdcp_measure = (T(c) / L1_frequency) * T(pseudorange_);
@@ -283,6 +285,64 @@ public:
     }
 
 private:
+    std::vector<double> sv_position_prev_;
+    std::vector<double> sv_position_curr_;
+    double tdcp_measure_;
+    int satellite_type_;
+    double weight_;
+};
+
+class TDCPFactorCostFunctor_v2 {
+public:
+    TDCPFactorCostFunctor_v2(const std::vector<double>& sv_position_prev,
+                          const std::vector<double>& sv_position_curr,
+                          double tdcp_measure,
+                          int satellite_type,
+                          double weight)
+        : sv_position_prev_(sv_position_prev),
+          sv_position_curr_(sv_position_curr),
+          tdcp_measure_(tdcp_measure),
+          satellite_type_(satellite_type),
+          weight_(weight) {}
+
+    template <typename T>
+    bool operator()(const T* const prev_state, const T* const curr_state, T* residual) const {
+        const double c = 299792458.0;  // 빛의 속도 (m/s)
+        const double omega = 7.292115e-5;  // 지구 자전 속도 (rad/s)
+
+        double L1_frequency = GetL1Frequency(satellite_type_);  // L1 신호 주파수 (Hz)
+
+        T sv_position_prev_rot[3];
+        T sv_position_curr_rot[3];
+
+        RotateSatellitePosition(prev_state, sv_position_prev_, sv_position_prev_rot);
+        RotateSatellitePosition(curr_state, sv_position_curr_, sv_position_curr_rot);
+
+        T los_vector_prev[3];
+        T los_vector_curr[3];
+        CalculateLOS(prev_state, sv_position_prev_rot, los_vector_prev);
+        CalculateLOS(curr_state, sv_position_curr_rot, los_vector_curr);
+
+        T D = T(0.0);
+        T g = T(0.0);
+  
+       for (int i = 0; i < 3; ++i) {
+            D += los_vector_curr[i] * sv_position_curr_rot[i] - los_vector_prev[i] * sv_position_prev_rot[i];
+            g += los_vector_curr[i] * prev_state[i] - los_vector_prev[i] * prev_state[i];
+        }
+
+        T tdcp_pred = (curr_state[3 + satellite_type_] - prev_state[3 + satellite_type_]);
+        for (int i = 0; i < 3; ++i) {
+            tdcp_pred += -los_vector_prev[i] * (curr_state[i] - prev_state[i]);
+        }
+
+        T tdcp_measure_corr = tdcp_measure_ - D + g;
+
+        residual[0] = (tdcp_pred - tdcp_measure_corr) * sqrt(weight_);
+
+        return true;
+    }
+    private:
     std::vector<double> sv_position_prev_;
     std::vector<double> sv_position_curr_;
     double tdcp_measure_;

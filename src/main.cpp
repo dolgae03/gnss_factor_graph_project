@@ -146,10 +146,13 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
                     const std::set<int>& constellation_type, const std::string& constellation_name) {
 
     cout << "=========================== Seed " << seed +1 <<" Starts ==========================="<< endl;
-    // std::string tau_str = "/tau_" + std::to_string(int(tau));
-    std::string tau_str = "/constSig_v2_tau_" + std::to_string(int(tau));
+    std::string tau_str = "/tau_" + std::to_string(int(tau));
+    // std::string tau_str = "/constSig_v3_tau_" + std::to_string(int(tau));
+    // std::string tau_str = "/elSig_v1_tau_" + std::to_string(int(tau));
+    // std::string tau_str = "/constSig_v2_tau_" + std::to_string(int(tau));
     std::string folder_name = matlab_save_dir + "/monte_carlo"+ tau_str + "/";
-    std::string seed_str = "/seed" + std::to_string(seed+1);  // seed 1 to 100
+    // std::string seed_str = "/seed" + std::to_string(seed+1);  // seed 1 to 100
+    std::string seed_str = "/v" + std::to_string(seed+1);  // seed 1 to 100
     std::string rover_dir = "../data/monte_carlo" +tau_str + "/data_rover" + seed_str;
     std::string station_dir = "../data/monte_carlo" +tau_str + "/data_base" + seed_str;
 
@@ -176,7 +179,7 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     label_clock << std::fixed << std::setprecision(2) << clock_const_weight;
     label_tau << std::fixed << std::setprecision(2) << tau_weight;
     if (use_df_pr)
-        folder_name += "pr_" + label_pr.str();
+        folder_name += "new_pr_" + label_pr.str();
     
     if (use_tdcp)
         folder_name += "_tdcp_" + label_tdcp.str();
