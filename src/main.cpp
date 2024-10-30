@@ -38,6 +38,7 @@ namespace fs = boost::filesystem;
 
 #define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))*(1/(sqrt(2)*1))
 #define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))*(1/(sqrt(2)*0.02))
+#define IMU_WEIGHT (double) (1/0.10)*(1/0.10)
 #define CONSATANT_CLOCK_WEIGHT (double) 10
 #define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))*(1/(sqrt(2)*0.14))
 
@@ -57,10 +58,12 @@ bool check_sv_data(T vector){
 bool parseCommandLineOptions(int argc, char* argv[], 
                              bool& use_df_pr, 
                              bool& use_tdcp, 
+                             bool& use_imu,
                              bool& use_clock_const, 
                              bool& use_tau,
                              double& df_pr_weight, 
                              double& tdcp_weight, 
+                             double& imu_weight,
                              double& clock_const_weight,
                              double& tau_weight,
                              double& tau,
@@ -77,11 +80,13 @@ bool parseCommandLineOptions(int argc, char* argv[],
         desc.add_options()
             ("help", "produce help message")
             ("disable-df-pr", po::value<bool>(&use_df_pr)->default_value(true)->implicit_value(false), "Disable DF-PR")
-            ("disable-tdcp", po::value<bool>(&use_tdcp)->default_value(true)->implicit_value(false), "Disable TDCP")
+            ("disable-tdcp", po::value<bool>(&use_tdcp)->default_value(false)->implicit_value(false), "Disable TDCP")
+            ("disable-imu", po::value<bool>(&use_imu)->default_value(true)->implicit_value(false), "Disable IMU")
             ("disable-clock-const", po::value<bool>(&use_clock_const)->default_value(true)->implicit_value(false), "Disable Clock Const")
             ("disable-tau", po::value<bool>(&use_tau)->default_value(true)->implicit_value(false), "Disable Tau Factor")
             ("df-pr-weight", po::value<double>(&df_pr_weight)->default_value(DF_PR_WEIGHT), "Set DF-PR weight")
             ("tdcp-weight", po::value<double>(&tdcp_weight)->default_value(TDCP_WEIGHT), "Set TDCP weight")
+            ("imu-weight", po::value<double>(&imu_weight)->default_value(IMU_WEIGHT), "Set IMU weight")
             ("clock-const-weight", po::value<double>(&clock_const_weight)->default_value(CONSATANT_CLOCK_WEIGHT), "Set Clock Const weight")
             ("tau-weight", po::value<double>(&tau_weight)->default_value(TAU_WEIGHT), "Set Tau weight")
             ("tau", po::value<double>(&tau)->default_value(0), "Set Tau")
@@ -145,8 +150,8 @@ bool parseCommandLineOptions(int argc, char* argv[],
 }
 
 int runOptimization(double tau, int seed, const std::string& matlab_save_dir, size_t start_epoch, size_t T, 
-                    bool use_df_pr, bool use_tdcp, bool use_clock_const,  bool use_tau, 
-                    double df_pr_weight, double tdcp_weight, double clock_const_weight, double tau_weight, 
+                    bool use_df_pr, bool use_tdcp, bool use_imu, bool use_clock_const,  bool use_tau, 
+                    double df_pr_weight, double tdcp_weight, double imu_weight, double clock_const_weight, double tau_weight, 
                     const std::set<int>& constellation_type, const std::string& constellation_name, const std::string& label, const std::string& dataset) {
 
     cout << "=========================== Seed " << seed +1 <<" Starts ==========================="<< endl;
@@ -164,13 +169,16 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
 
     std::string pr_file = "/pr.csv";
     std::string ph_file = "/carrier.csv";
+    std::string imu_file = "/imu_diff.csv";
     std::string sv_pos_file = "/sv_pos.csv";
     std::string sv_vel_file = "/sv_vel.csv";
     std::string time_file = "/time.csv";
 
     // CSV 파일 읽기
+    double sigma_imu = 0.1;
     std::vector<std::vector<double>> pr_data = readPseudorangeCSV(rover_dir + pr_file);
     std::vector<std::vector<double>> ph_data = readPseudorangeCSV(rover_dir + ph_file);
+    std::vector<double> imu_data = generateIMUdata(T, sigma_imu);
     std::vector<std::vector<std::vector<double>>> sv_pos_data = readSVPosAndVelCSV(rover_dir + sv_pos_file);
     // std::vector<std::vector<std::vector<double>>> sv_vel_data = readSVPosAndVelCSV(rover_dir + sv_vel_file);
     std::vector<std::pair<int, double>> time_data = readGpsTimeCSV(rover_dir + time_file);
@@ -179,9 +187,10 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     std::vector<std::vector<std::vector<double>>> sv_pos_data_station = readSVPosAndVelCSV(station_dir + sv_pos_file);
     // std::vector<std::vector<std::vector<double>>> sv_vel_data_station = readSVPosAndVelCSV(station_dir + sv_vel_file);
     std::vector<std::pair<int, double>> time_data_station = readGpsTimeCSV(station_dir + time_file);
-    std::ostringstream label_pr, label_tdcp, label_clock, label_tau;
+    std::ostringstream label_pr, label_tdcp, label_imu, label_clock, label_tau;
     label_pr << std::fixed << std::setprecision(2) << df_pr_weight;
     label_tdcp << std::fixed << std::setprecision(2) << tdcp_weight;
+    label_imu << std::fixed << std::setprecision(2) << imu_weight;
     label_clock << std::fixed << std::setprecision(2) << clock_const_weight;
     label_tau << std::fixed << std::setprecision(2) << tau_weight;
 
@@ -191,6 +200,9 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     
     if (use_tdcp)
         folder_name += "_tdcp_" + label_tdcp.str();
+
+    if (use_imu)
+        folder_name += "_imu_" + label_imu.str();
     
     if (use_clock_const)
         folder_name += "_clockconst_" + label_clock.str();
@@ -215,6 +227,7 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     std::string log_file_cov = folder_name_seed + "/error_cov.csv";
     std::string log_file_residual_pr = folder_name_seed + "/residual_pr.csv";
     std::string log_file_residual_tdcp = folder_name_seed + "/residual_tdcp.csv";
+    std::string log_file_residual_imu = folder_name_seed + "/residual_imu.csv";
     std::string log_file_pr_noise = folder_name_seed + "/pr_noise.csv";
     std::string log_summary = folder_name_seed + "/summary.txt";
     // log results
@@ -223,6 +236,7 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     std::ofstream fout_cov(log_file_cov);
     std::ofstream fout_residual_pr(log_file_residual_pr);
     std::ofstream fout_residual_tdcp(log_file_residual_tdcp);
+    std::ofstream fout_residual_imu(log_file_residual_imu);
     std::ofstream fout_pr_noise(log_file_pr_noise);
     std::ofstream fout_summary(log_summary);
     
@@ -230,12 +244,14 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     fout_llh << "Epoch, Latitude, Longitude, Altitude\n";
     fout_residual_pr << "Epoch, SV, Pr_residual" << endl;
     fout_residual_tdcp << "Epoch, SV, TDCP_residual" << endl;
+    fout_residual_tdcp << "Epoch, IMU_residual" << endl;
     fout_pr_noise << "Epoch, SV, Pr_noise" << endl;
     fout_ecef  << std::fixed << std::setprecision(10);
     fout_llh  << std::fixed << std::setprecision(10);
     fout_cov  << std::fixed << std::setprecision(10);
     fout_residual_pr  << std::fixed << std::setprecision(10);
     fout_residual_tdcp  << std::fixed << std::setprecision(10);
+    fout_residual_imu  << std::fixed << std::setprecision(10);
     fout_pr_noise  << std::fixed << std::setprecision(10);
 
     
@@ -250,6 +266,7 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     // std::vector<double> ref_location = {-3.119857169546223e+06,   4.086857741848765e+06,   3.761579979559745e+06}; // constSig_v1
     std::vector<double> ref_location = coordinate::lla2ecef({36.3727470000000, 127.357671000000, 10}); // constSig_v2
     std::vector<double> true_location = {-3.119912748424704e+06,   4.086855271253883e+06,   3.761519993999301e+06, 0};
+    // std::vector<double> offset = {0.1, 0.1, 0.1, 0.1};
     std::vector<double> offset = {0, 0, 0, 0};
 
     // std::vector<double> init_location(true_location.size());
@@ -302,19 +319,25 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     // double* current_position = nullptr;
     // current_position = new double[num_var_pos];
     // std::fill(current_position, current_position + num_var_pos, 0.0); 
+
     
     
 
     for(size_t epoch=start_epoch; epoch < max_epoch; ++epoch){
-
         previous_position = current_position;
         previous_noise = current_noise;
         current_position = new double[num_var_pos];
-        current_noise = new double[num_var_meas];        
+        current_noise = new double[num_var_meas];   
         for(int i=0; i<num_var_pos; i++) // initial values
             current_position[i] = previous_position[i];  
         for(int i=0; i<num_var_meas; i++)
             current_noise[i] = previous_noise[i]; 
+
+        // std::cout << std::fixed << std::setprecision(6);
+        // cout << "Epoch " << epoch << " | Prev state " << previous_position[0] << " "<< previous_position[1] <<  " "<< previous_position[2] <<  " "<<previous_position[3] << endl;
+        // cout << "Epoch " << epoch << " | Curr state " << current_position[0] << " "<< current_position[1] <<  " "<< current_position[2] <<  " "<<current_position[3] << endl;
+        
+        
 
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
             int satellite_type;
@@ -407,6 +430,22 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
                     problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
                 }
             }
+
+            if(use_imu &&
+                epoch > start_epoch){
+                double imu_value = imu_data[epoch];
+                std::cout << std::fixed << std::setprecision(6);
+
+                //Add IMU Factor
+                factor::IMUFactorCostFunctor* functor = 
+                    new factor::IMUFactorCostFunctor(imu_value, imu_weight);
+                // cout << "IMU " << imu_value << endl;
+
+                ceres::CostFunction* cost_function = 
+                    new ceres::AutoDiffCostFunction<factor::IMUFactorCostFunctor, 1, num_var_pos, num_var_pos>(functor);
+        
+                problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+            }
     
         }
 
@@ -485,6 +524,7 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
         fout_llh << epoch << ", " << res[0] << ", " << res[1] << ", " << res[2] << endl;
         double df_pr_sum = 0;
         double tdcp_sum = 0;
+        double imu_sum = 0;
         for(size_t satellite=0; satellite < pr_data[epoch].size(); ++satellite){
             int satellite_type;
 
@@ -548,6 +588,26 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
                 double residual[1];
                 functor(&noise_states[epoch - start_epoch - 1][satellite], &noise_states[epoch - start_epoch][satellite], residual);
             }
+            if(use_imu &&
+                epoch > start_epoch){
+                double imu_value = imu_data[epoch];
+                if (!std::isnan(imu_value)){
+
+                    //Add IMU Factor
+                    factor::IMUFactorCostFunctor functor(imu_value, imu_weight);
+                    double residual[1];
+                    functor(position_states[epoch - start_epoch - 1], position_states[epoch - start_epoch], residual);
+
+                    imu_sum += residual[0] * residual[0];
+                    // std::cout << "imu,"<< epoch + 1 << "," << satellite<< ","<<  residual[0] * residual[0] << std::endl;
+                    // Output the residual
+                    fout_residual_imu << epoch +1 << ", " << satellite+1 << ", "<< residual[0] << endl;
+                
+                    
+                }
+                
+            }
+
         }
         // std::cout << "pr,"<< epoch + 1 << "," << df_pr_sum << std::endl;
         // if(use_tdcp && epoch > start_epoch)
@@ -584,6 +644,7 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     fout_cov.close();
     fout_residual_pr.close();
     fout_residual_tdcp.close();
+    fout_residual_imu.close();
     fout_summary.close();
 
     for (double* pos : position_states) {
@@ -605,8 +666,8 @@ int main(int argc, char** argv) {
 
     /*Define Input Factor*/
 
-    bool use_df_pr, use_tdcp, use_clock_const, use_tau;
-    double df_pr_weight, tdcp_weight, clock_const_weight, tau_weight, tau;
+    bool use_df_pr, use_tdcp, use_imu, use_clock_const, use_tau;
+    double df_pr_weight, tdcp_weight, imu_weight, clock_const_weight, tau_weight, tau;
     const double CONST_C = 299792458.0;
 
     size_t start_epoch, T;
@@ -616,8 +677,8 @@ int main(int argc, char** argv) {
     std::string label, dataset;
 
     if (!parseCommandLineOptions(argc, argv, 
-                                use_df_pr, use_tdcp, use_clock_const, use_tau,
-                                df_pr_weight, tdcp_weight, clock_const_weight, tau_weight, tau,
+                                use_df_pr, use_tdcp, use_imu, use_clock_const, use_tau,
+                                df_pr_weight, tdcp_weight, imu_weight, clock_const_weight, tau_weight, tau,
                                 start_epoch, T,
                                 constellation_type, constellation_name, 
                                 label, dataset)) {
@@ -630,10 +691,12 @@ int main(int argc, char** argv) {
     std::cout << "Dataset: " << dataset << "\n";
     std::cout << "DF-PR enabled: " << std::boolalpha << use_df_pr << "\n";
     std::cout << "TDCP enabled: " << std::boolalpha << use_tdcp << "\n";
+    std::cout << "IMU enabled: " << std::boolalpha << use_imu << "\n";
     std::cout << "Clock Const enabled: " << std::boolalpha << use_clock_const << "\n";
     std::cout << "Tau enabled: " << std::boolalpha << use_tau << "\n";
     std::cout << "DF-PR weight: " << df_pr_weight << "\n";
     std::cout << "TDCP weight: " << tdcp_weight << "\n";
+    std::cout << "IMU weight: " << imu_weight << "\n";
     std::cout << "Clock Const weight: " << clock_const_weight << "\n";
     std::cout << "Tau weight: " << tau_weight << "\n";
     std::cout << "Tau: " << tau << "\n";
@@ -653,12 +716,12 @@ int main(int argc, char** argv) {
     // std::string folder_name = matlab_save_dir + constellation_name +"/rooftop4"+ "/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
     
     
-    int seed_num = 100;
+    int seed_num = 1;
 
     for (int seed = 0; seed < seed_num; seed++) {
         runOptimization(tau, seed, matlab_save_dir, start_epoch, T, 
-                        use_df_pr, use_tdcp, use_clock_const, use_tau, 
-                        df_pr_weight, tdcp_weight, clock_const_weight, tau_weight, 
+                        use_df_pr, use_tdcp, use_imu, use_clock_const, use_tau, 
+                        df_pr_weight, tdcp_weight, imu_weight, clock_const_weight, tau_weight, 
                         constellation_type, constellation_name, label, dataset);
     }
 

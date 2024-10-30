@@ -10,6 +10,8 @@ bool isValidInteger(const std::string& str);
 // 유효한 실수인지 확인하는 함수
 bool isValidDouble(const std::string& str);
 
+std::vector<double> generateIMUdata(size_t numEpochs, double sigma);
+
 // pr.csv 파일을 읽고 데이터를 벡터로 반환하는 함수
 std::vector<std::pair<int, double>> readGpsTimeCSV(const std::string& filename);
 

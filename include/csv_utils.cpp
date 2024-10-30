@@ -7,8 +7,10 @@
 #include <utility>
 #include <stdexcept>
 #include <limits>
+#include <random>
 
 using namespace std;
+
 
 bool isValidInteger(const std::string& str) {
     std::istringstream iss(str);
@@ -24,6 +26,24 @@ bool isValidDouble(const std::string& str) {
     double value;
     return (iss >> value) && (iss.eof());
 }
+
+std::vector<double> generateIMUdata(size_t numEpochs, double sigma) {
+    std::vector<double> data(numEpochs);
+
+    // 난수 생성 엔진 및 분포 설정
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::normal_distribution<> d(0.0, sigma);  // 평균 0, 표준 편차 sigma
+
+    // 데이터 생성
+    for (int i = 0; i < numEpochs; ++i) {
+        data[i] = d(gen);
+    }
+
+    return data;
+}
+
+
 
 std::vector<std::pair<int, double>> readGpsTimeCSV(const std::string& filename) {
     std::ifstream file(filename);

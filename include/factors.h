@@ -83,8 +83,12 @@ void CalculateLOS(const T* user_state,
 template <typename T>
 T computeRange(const T* pos1, const T* pos2) {
     T range = T(0);
+    T eps = T(1e-8);
     for (int i = 0; i < 3; ++i) {
         range += (pos1[i] - pos2[i]) * (pos1[i] - pos2[i]);
+    }
+    if (range < eps) {
+        range = eps;
     }
     return ceres::sqrt(range);
 }
@@ -424,6 +428,27 @@ class NumTDCPFactorCostFunctor {
         std::vector<double> sv_position_curr_;
         double pseudorange_;
         int satellite_type_;
+        double weight_;
+};
+
+class IMUFactorCostFunctor {
+    public:
+        IMUFactorCostFunctor(double imu_measure, double weight)
+            : imu_measure_(imu_measure), weight_(weight) {}
+
+        template <typename T>
+        bool operator()(const T* const prev_state, const T* const curr_state, T* residual) const {
+
+            T imu_pred = computeRange(prev_state, curr_state);
+            residual[0] = (imu_pred - T(imu_measure_)) * T(sqrt(weight_));
+            // cout << "IMU Pred: " << imu_pred << " | IMU_measured " << imu_measure_ << endl;
+            // std::cout << "prev_state: " << prev_state[0] << ", " << prev_state[1] << ", " << prev_state[2] << std::endl;
+            // std::cout << "curr_state: " << curr_state[0] << ", " << curr_state[1] << ", " << curr_state[2] << std::endl;
+            return true;
+        }
+
+    private:
+        double imu_measure_;
         double weight_;
 };
 
