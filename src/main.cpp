@@ -38,7 +38,7 @@ namespace fs = boost::filesystem;
 
 #define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))*(1/(sqrt(2)*1))
 #define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))*(1/(sqrt(2)*0.02))
-#define CONSATANT_CLOCK_WEIGHT (double) 1
+#define CONSATANT_CLOCK_WEIGHT (double) 10
 #define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))*(1/(sqrt(2)*0.14))
 
 // std::string rover_dir = "../data/rooftop4/data_rover/";
@@ -68,7 +68,8 @@ bool parseCommandLineOptions(int argc, char* argv[],
                              size_t& T,
                              std::set<int>& constellation_type,
                              std::string& constellation_name, 
-                             std::string& label) {
+                             std::string& label,
+                             std::string& dataset) {
     try {
         std::vector<std::string> constellations;
 
@@ -88,7 +89,8 @@ bool parseCommandLineOptions(int argc, char* argv[],
             ("T", po::value<size_t>(&T)->default_value(100), "Set T value (default 100)")
             ("constellations", po::value<std::vector<std::string>>(&constellations)->multitoken()->default_value(std::vector<std::string>{"gps"}, "gps"), 
                 "Set GPS constellations (gps, bds, gal)")
-            ("label", po::value<std::string>(&label)->default_value(""), "Add Label");
+            ("label", po::value<std::string>(&label)->default_value(""), "Add Label")
+            ("dataset", po::value<std::string>(&dataset)->default_value("constSig_v3"), "Choose Dataset");
 
         po::variables_map vm;
         po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -145,14 +147,14 @@ bool parseCommandLineOptions(int argc, char* argv[],
 int runOptimization(double tau, int seed, const std::string& matlab_save_dir, size_t start_epoch, size_t T, 
                     bool use_df_pr, bool use_tdcp, bool use_clock_const,  bool use_tau, 
                     double df_pr_weight, double tdcp_weight, double clock_const_weight, double tau_weight, 
-                    const std::set<int>& constellation_type, const std::string& constellation_name, const std::string& label) {
+                    const std::set<int>& constellation_type, const std::string& constellation_name, const std::string& label, const std::string& dataset) {
 
     cout << "=========================== Seed " << seed +1 <<" Starts ==========================="<< endl;
     // std::string tau_str = "/tau_" + std::to_string(int(tau));
     // std::string tau_str = "/constSig_v1_tau_" + std::to_string(int(tau));
     // std::string tau_str = "/constSig_v2_tau_" + std::to_string(int(tau));
     // std::string tau_str = "/constSig_v3_tau_" + std::to_string(int(tau));
-    std::string tau_str = "/constSig_v4_tau_" + std::to_string(int(tau));
+    std::string tau_str = "/" + dataset + "_tau_" + std::to_string(int(tau));
     // std::string tau_str = "/elSig_v1_tau_" + std::to_string(int(tau));
     
     std::string folder_name = matlab_save_dir + "/monte_carlo"+ tau_str + "/";
@@ -611,20 +613,21 @@ int main(int argc, char** argv) {
 
     std::set<int> constellation_type;
     std::string constellation_name;
-    std::string label;
+    std::string label, dataset;
 
     if (!parseCommandLineOptions(argc, argv, 
                                 use_df_pr, use_tdcp, use_clock_const, use_tau,
                                 df_pr_weight, tdcp_weight, clock_const_weight, tau_weight, tau,
                                 start_epoch, T,
                                 constellation_type, constellation_name, 
-                                label)) {
+                                label, dataset)) {
         return EXIT_FAILURE;  // 옵션 파싱 실패 또는 도움말 출력 시 프로그램 종료
     }
 
 
     // 프로그램 로직이 여기에 들어갑니다.
-    // 예시 출력
+    // 예시 출력'
+    std::cout << "Dataset: " << dataset << "\n";
     std::cout << "DF-PR enabled: " << std::boolalpha << use_df_pr << "\n";
     std::cout << "TDCP enabled: " << std::boolalpha << use_tdcp << "\n";
     std::cout << "Clock Const enabled: " << std::boolalpha << use_clock_const << "\n";
@@ -650,13 +653,13 @@ int main(int argc, char** argv) {
     // std::string folder_name = matlab_save_dir + constellation_name +"/rooftop4"+ "/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
     
     
-    int seed_num = 1000;
+    int seed_num = 100;
 
     for (int seed = 0; seed < seed_num; seed++) {
         runOptimization(tau, seed, matlab_save_dir, start_epoch, T, 
                         use_df_pr, use_tdcp, use_clock_const, use_tau, 
                         df_pr_weight, tdcp_weight, clock_const_weight, tau_weight, 
-                        constellation_type, constellation_name, label);
+                        constellation_type, constellation_name, label, dataset);
     }
 
     return 0 ;

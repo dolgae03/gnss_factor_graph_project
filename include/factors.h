@@ -102,8 +102,8 @@ class ConstantClockBiasFactorCostFunctor {
             T clock_bias1 = state1[satellite_type_];
             T clock_bias2 = state2[satellite_type_];
             
-            // residual[0] = (clock_bias1 - clock_bias2) * T(weight_);
-            residual[0] = (clock_bias1*clock_bias1) * T(weight_);
+            residual[0] = (clock_bias1 - clock_bias2) * T(weight_);
+            // residual[0] = (clock_bias1*clock_bias1) * T(weight_);
             // cout << "clock residual "<< residual[0] << endl; 
             return true;
             
