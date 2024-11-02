@@ -35,10 +35,11 @@ namespace fs = boost::filesystem;
 // #define TDCP_WEIGHT (double) (1/(0.02))*(1/(0.02))
 // #define CONSATANT_CLOCK_WEIGHT (double) 0
 // #define TAU_WEIGHT (double) (1/(0.14))*(1/(0.14))
+double sigma_imu = 0.1;
 
 #define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))*(1/(sqrt(2)*1))
 #define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))*(1/(sqrt(2)*0.02))
-#define IMU_WEIGHT (double) (1/0.10)*(1/0.10)
+#define IMU_WEIGHT (double) (1/sigma_imu)*(1/sigma_imu)
 #define CONSATANT_CLOCK_WEIGHT (double) 10
 #define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))*(1/(sqrt(2)*0.14))
 
@@ -175,7 +176,7 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     std::string time_file = "/time.csv";
 
     // CSV 파일 읽기
-    double sigma_imu = 0.1;
+
     std::vector<std::vector<double>> pr_data = readPseudorangeCSV(rover_dir + pr_file);
     std::vector<std::vector<double>> ph_data = readPseudorangeCSV(rover_dir + ph_file);
     std::vector<double> imu_data = generateIMUdata(T, sigma_imu);
@@ -266,8 +267,8 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     // std::vector<double> ref_location = {-3.119857169546223e+06,   4.086857741848765e+06,   3.761579979559745e+06}; // constSig_v1
     std::vector<double> ref_location = coordinate::lla2ecef({36.3727470000000, 127.357671000000, 10}); // constSig_v2
     std::vector<double> true_location = {-3.119912748424704e+06,   4.086855271253883e+06,   3.761519993999301e+06, 0};
-    // std::vector<double> offset = {0.1, 0.1, 0.1, 0.1};
-    std::vector<double> offset = {0, 0, 0, 0};
+    std::vector<double> offset = {1e-6, 0, 0, 0};
+    // std::vector<double> offset = {0, 0, 0, 0};
 
     // std::vector<double> init_location(true_location.size());
     // for (size_t i = 0; i < true_location.size(); ++i) {
@@ -315,7 +316,7 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     current_noise = new double[num_var_meas];
     std::fill(current_noise, current_noise + num_var_meas, 0.0);
 
-    double* current_position = &init_location[0];  // initial value를 true state으로
+    double* current_position = &init_location[0];  
     // double* current_position = nullptr;
     // current_position = new double[num_var_pos];
     // std::fill(current_position, current_position + num_var_pos, 0.0); 
@@ -329,7 +330,9 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
         current_position = new double[num_var_pos];
         current_noise = new double[num_var_meas];   
         for(int i=0; i<num_var_pos; i++) // initial values
-            current_position[i] = previous_position[i];  
+            // current_position[i] = previous_position[i] + offset[i];  
+            current_position[i] = previous_position[i] ;  
+
         for(int i=0; i<num_var_meas; i++)
             current_noise[i] = previous_noise[i]; 
 
@@ -430,24 +433,25 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
                     problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
                 }
             }
-
-            if(use_imu &&
-                epoch > start_epoch){
-                double imu_value = imu_data[epoch];
-                std::cout << std::fixed << std::setprecision(6);
-
-                //Add IMU Factor
-                factor::IMUFactorCostFunctor* functor = 
-                    new factor::IMUFactorCostFunctor(imu_value, imu_weight);
-                // cout << "IMU " << imu_value << endl;
-
-                ceres::CostFunction* cost_function = 
-                    new ceres::AutoDiffCostFunction<factor::IMUFactorCostFunctor, 1, num_var_pos, num_var_pos>(functor);
-        
-                problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
-            }
-    
         }
+            
+
+        if(use_imu &&
+            epoch > start_epoch) {
+            double imu_value = imu_data[epoch];
+            std::cout << std::fixed << std::setprecision(6);
+            //Add IMU Factor
+            factor::IMUFactorCostFunctor* functor = 
+                new factor::IMUFactorCostFunctor(imu_value, imu_weight);
+            cout << "EPOCH " << epoch << " | IMU " << imu_value << endl;
+
+            ceres::CostFunction* cost_function = 
+                new ceres::AutoDiffCostFunction<factor::IMUFactorCostFunctor, 1, num_var_pos, num_var_pos>(functor);
+    
+            problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+        }
+    
+           
 
         if (use_clock_const &&
             epoch > start_epoch){
@@ -511,11 +515,11 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
         }
         fout_ecef << endl;
 
-        cout << "Epoch " << epoch <<  "| Clock: "<< position[3] <<" | Noise: ";
-        for(int i=0; i<num_var_meas; i++) {
-            cout << noise[i] << ", " ;
-        }
-        cout << endl;
+        // cout << "Epoch " << epoch <<  "| Clock: "<< position[3] <<" | Noise: ";
+        // for(int i=0; i<num_var_meas; i++) {
+        //     cout << noise[i] << ", " ;
+        // }
+        // cout << endl;
 
         std::vector<double> ecef_position = {position[0], position[1], position[2]};
         std::vector<double> res = coordinate::ecef2lla(ecef_position);
@@ -588,26 +592,23 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
                 double residual[1];
                 functor(&noise_states[epoch - start_epoch - 1][satellite], &noise_states[epoch - start_epoch][satellite], residual);
             }
-            if(use_imu &&
-                epoch > start_epoch){
-                double imu_value = imu_data[epoch];
-                if (!std::isnan(imu_value)){
 
-                    //Add IMU Factor
-                    factor::IMUFactorCostFunctor functor(imu_value, imu_weight);
-                    double residual[1];
-                    functor(position_states[epoch - start_epoch - 1], position_states[epoch - start_epoch], residual);
 
-                    imu_sum += residual[0] * residual[0];
-                    // std::cout << "imu,"<< epoch + 1 << "," << satellite<< ","<<  residual[0] * residual[0] << std::endl;
-                    // Output the residual
-                    fout_residual_imu << epoch +1 << ", " << satellite+1 << ", "<< residual[0] << endl;
-                
-                    
-                }
+        }
+        if(use_imu &&
+            epoch > start_epoch){
+            double imu_value = imu_data[epoch];
+            if (!std::isnan(imu_value)){
+
+                //Add IMU Factor
+                factor::IMUFactorCostFunctor functor(imu_value, imu_weight);
+                double residual[1];
+                functor(position_states[epoch - start_epoch - 1], position_states[epoch - start_epoch], residual);
+                imu_sum += residual[0] * residual[0];
+                // cout << "EPOCH " << epoch << endl;    
                 
             }
-
+            
         }
         // std::cout << "pr,"<< epoch + 1 << "," << df_pr_sum << std::endl;
         // if(use_tdcp && epoch > start_epoch)
@@ -624,15 +625,19 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
         if (covariance_result){
             double covariance_matrix[num_var_pos * num_var_pos];
             covariance.GetCovarianceBlock(position, position, covariance_matrix); 
-            // std::cout << "Covariance Matrix:\n";
+            std::cout << "| Epoch " << epoch<< " | Covariance Matrix: ";
             for (int i = 0; i < num_var_pos; i++) {
                 for (int j = 0; j < num_var_pos; j++) {
-                    // std::cout << covariance_matrix[num_var_pos * i + j] << " ";
+                    if (i == j) {
+                        std::cout << covariance_matrix[num_var_pos * i + j] << " ";
+                    }
+                    
                     fout_cov << covariance_matrix[num_var_pos * i + j] << ", ";
                 }
-                // std::cout << endl;
+                
                 fout_cov << endl;
             }
+            std::cout << endl;
         }    
 
     }
@@ -716,7 +721,7 @@ int main(int argc, char** argv) {
     // std::string folder_name = matlab_save_dir + constellation_name +"/rooftop4"+ "/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
     
     
-    int seed_num = 1;
+    int seed_num = 100;
 
     for (int seed = 0; seed < seed_num; seed++) {
         runOptimization(tau, seed, matlab_save_dir, start_epoch, T, 

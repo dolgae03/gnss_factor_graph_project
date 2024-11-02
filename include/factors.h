@@ -83,15 +83,15 @@ void CalculateLOS(const T* user_state,
 template <typename T>
 T computeRange(const T* pos1, const T* pos2) {
     T range = T(0);
-    T eps = T(1e-8);
+    T eps = T(1e-4);
     for (int i = 0; i < 3; ++i) {
         range += (pos1[i] - pos2[i]) * (pos1[i] - pos2[i]);
     }
-    if (range < eps) {
-        range = eps;
-    }
+
     return ceres::sqrt(range);
 }
+
+
 
 namespace factor {
 class ConstantClockBiasFactorCostFunctor {
@@ -431,6 +431,21 @@ class NumTDCPFactorCostFunctor {
         double weight_;
 };
 
+template <typename T>
+T computeRangeIMU(const T* pos1, const T* pos2) {
+    T range = T(0);
+    T eps = T(1e-100);
+    for (int i = 0; i < 3; ++i) {
+        range += (pos1[i] - pos2[i]) * (pos1[i] - pos2[i]);
+    }
+    if (range == 0) {
+        // cout << "@@ ZERO HERE!!!!" << pos1[0] << " " << pos1[1] << " " << pos1[2]<< " " << pos1[3]<< " " << endl;
+        // range = T(0);
+        range = eps; 
+    } 
+    return ceres::sqrt(range);
+}
+
 class IMUFactorCostFunctor {
     public:
         IMUFactorCostFunctor(double imu_measure, double weight)
@@ -439,7 +454,7 @@ class IMUFactorCostFunctor {
         template <typename T>
         bool operator()(const T* const prev_state, const T* const curr_state, T* residual) const {
 
-            T imu_pred = computeRange(prev_state, curr_state);
+            T imu_pred = computeRangeIMU(prev_state, curr_state);
             residual[0] = (imu_pred - T(imu_measure_)) * T(sqrt(weight_));
             // cout << "IMU Pred: " << imu_pred << " | IMU_measured " << imu_measure_ << endl;
             // std::cout << "prev_state: " << prev_state[0] << ", " << prev_state[1] << ", " << prev_state[2] << std::endl;
@@ -451,6 +466,36 @@ class IMUFactorCostFunctor {
         double imu_measure_;
         double weight_;
 };
+
+
+
+// class IMUPriorFactorCostFunctor {
+//     public:
+//         IMUPriorFactorCostFunctor(double* init_location, double weight)
+//             : init_location_(init_location), weight_(weight) {}
+
+//         template <typename T>
+//         bool operator()(const T* const curr_state, T* residual) const {
+//             T init_location_T[3];
+
+//             for (int i = 0; i < 3; ++i) {
+//                 init_location_T[i] = T(init_location_[i]);
+//                 init_location_T[i] = T(init_location_[i]);
+//             }     
+
+//             T imu_pred = computeRange(init_location_T, curr_state);
+//             residual[0] = (imu_pred - T(0)) * T(sqrt(weight_));
+//             // cout << "IMU Pred: " << imu_pred << " | IMU_measured " << imu_measure_ << endl;
+//             // std::cout << "prev_state: " << prev_state[0] << ", " << prev_state[1] << ", " << prev_state[2] << std::endl;
+//             // std::cout << "curr_state: " << curr_state[0] << ", " << curr_state[1] << ", " << curr_state[2] << std::endl;
+//             return true;
+//         }
+
+//     private:
+//         double* init_location_;
+//         double weight_;
+// };
+
 
 
 
