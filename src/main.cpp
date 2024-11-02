@@ -272,9 +272,9 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     // options.minimizer_type = ceres::LINE_SEARCH;  // MATLAB의 'quasi-newton' 알고리즘과 대응
     // options.line_search_direction_type = ceres::LBFGS;  // BFGS 방법 사용
     options.minimizer_progress_to_stdout = true;  // 'Display','iter-detailed'에 대응
-    options.gradient_tolerance = 1e-8;  // 'OptimalityTolerance'를 더 엄격하게
-    options.parameter_tolerance = 1e-10;  // 'TolX'를 더 엄격하게  
-    options.function_tolerance = 1e-8;  // 'FunctionTolerance'를 더 엄격하게
+    options.gradient_tolerance = 1e-10;  // 'OptimalityTolerance'를 더 엄격하게
+    options.parameter_tolerance = 1e-12;  // 'TolX'를 더 엄격하게  
+    options.function_tolerance = 1e-12;  // 'FunctionTolerance'를 더 엄격하게
     options.gradient_check_numeric_derivative_relative_step_size = 1e-7;  // 'FiniteDifferenceStepSize'를 더 엄격하게
     options.max_num_iterations = 1e+5;  // 'MaxIterations'를 늘려 더 많은 반복 허용
     options.num_threads = 16;
@@ -357,9 +357,10 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
                 }
 
                 if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station) && !check_sv_data(sv_pos_data[epoch][satellite])){
+                    double df_pr_weight_tau = 1/(df_pr_weight + tau_weight);
                       factor::DiffPesudorangeTauFactorCostFunctor* functor_prTau = 
                         new factor::DiffPesudorangeTauFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
-                                                                    pr_value-pr_value_station, satellite_type, df_pr_weight, satellite);
+                                                                    pr_value-pr_value_station, satellite_type, df_pr_weight_tau, satellite);
 
                     ceres::CostFunction* cost_function_prTau =
                         new ceres::AutoDiffCostFunction<factor::DiffPesudorangeTauFactorCostFunctor, 1, num_var_pos, 1>(functor_prTau);
@@ -410,16 +411,28 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     
         }
 
+        // if (use_clock_const &&
+        //     epoch > start_epoch){
+        //     for(int i=3; i<num_var_pos; i++){
+        //     // Add Constant Clock Bias Factor
+        //         factor::ConstantClockBiasFactorCostFunctor* functor = 
+        //                 new factor::ConstantClockBiasFactorCostFunctor(i, clock_const_weight);
+
+        //         ceres::CostFunction* cost_function = 
+        //             new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, num_var_pos, num_var_pos>(functor);
+        //         problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+        //     }
+        // }
         if (use_clock_const &&
-            epoch > start_epoch){
+            epoch >= start_epoch){
             for(int i=3; i<num_var_pos; i++){
             // Add Constant Clock Bias Factor
-                factor::ConstantClockBiasFactorCostFunctor* functor = 
-                        new factor::ConstantClockBiasFactorCostFunctor(i, clock_const_weight);
+                factor::ZeroClockBiasFactorCostFunctor* functor = 
+                        new factor::ZeroClockBiasFactorCostFunctor(i, clock_const_weight);
 
                 ceres::CostFunction* cost_function = 
-                    new ceres::AutoDiffCostFunction<factor::ConstantClockBiasFactorCostFunctor, 1, num_var_pos, num_var_pos>(functor);
-                problem.AddResidualBlock(cost_function, nullptr, previous_position, current_position);
+                    new ceres::AutoDiffCostFunction<factor::ZeroClockBiasFactorCostFunctor, 1,  num_var_pos>(functor);
+                problem.AddResidualBlock(cost_function, nullptr, current_position);
             }
         }
 
@@ -653,7 +666,7 @@ int main(int argc, char** argv) {
     // std::string folder_name = matlab_save_dir + constellation_name +"/rooftop4"+ "/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
     
     
-    int seed_num = 100;
+    int seed_num = 1;
 
     for (int seed = 0; seed < seed_num; seed++) {
         runOptimization(tau, seed, matlab_save_dir, start_epoch, T, 

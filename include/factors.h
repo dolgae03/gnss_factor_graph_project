@@ -102,8 +102,31 @@ class ConstantClockBiasFactorCostFunctor {
             T clock_bias1 = state1[satellite_type_];
             T clock_bias2 = state2[satellite_type_];
             
-            residual[0] = (clock_bias1 - clock_bias2) * T(weight_);
-            // residual[0] = (clock_bias1*clock_bias1) * T(weight_);
+            // residual[0] = (clock_bias1 - clock_bias2) * T(weight_);
+            residual[0] = (clock_bias2*clock_bias2) * T(weight_);
+            // cout << "clock residual "<< residual[0] << endl; 
+            return true;
+            
+        }
+
+    private:
+        int satellite_type_;
+        double weight_;
+};
+
+class ZeroClockBiasFactorCostFunctor {
+    public:
+        ZeroClockBiasFactorCostFunctor(int satellite_type, double weight)
+            : satellite_type_(satellite_type), weight_(weight) {}
+
+        template <typename T>
+        bool operator()(const T* const state1,  T* residual) const {
+            // state1과 state2의 clock bias 차이 계산
+            const double c = 299792458.0;  // Speed of light in m/s
+            T clock_bias1 = state1[satellite_type_];
+            
+            // residual[0] = (clock_bias1 - clock_bias2) * T(weight_);
+            residual[0] = (clock_bias1) * T(weight_);
             // cout << "clock residual "<< residual[0] << endl; 
             return true;
             
@@ -178,6 +201,7 @@ class DiffPesudorangeTauFactorCostFunctor {
             T range_ref = computeRange(ref_position_T, rotated_sv_pos);
             
             T estimated_pr_diff = range_user - range_ref + clock_bias + noise_state[0];
+            // T estimated_pr_diff = range_user - range_ref + clock_bias ;
             // T estimated_pr_diff = range_user - range_ref + noise_state[0];
             residual[0] = (T(pesudorange_) - estimated_pr_diff) * T(sqrt(weight_));
 
