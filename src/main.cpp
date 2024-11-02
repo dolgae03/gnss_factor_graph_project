@@ -36,10 +36,15 @@ namespace fs = boost::filesystem;
 // #define CONSATANT_CLOCK_WEIGHT (double) 0
 // #define TAU_WEIGHT (double) (1/(0.14))*(1/(0.14))
 
-#define DF_PR_WEIGHT (double) (1/(sqrt(2)*1))*(1/(sqrt(2)*1))
-#define TDCP_WEIGHT (double) (1/(sqrt(2)*0.02))*(1/(sqrt(2)*0.02))
+double sig_pr = 1.0;
+double sig_ph = 0.02;
+double sig_noise = 0.14;
+
+
+#define DF_PR_WEIGHT (double) (1/(sqrt(2)*sig_pr))*(1/(sqrt(2)*sig_pr))
+#define TDCP_WEIGHT (double) (1/(sqrt(2)*sig_ph))*(1/(sqrt(2)*sig_ph))
 #define CONSATANT_CLOCK_WEIGHT (double) 10
-#define TAU_WEIGHT (double) (1/(sqrt(2)*0.14))*(1/(sqrt(2)*0.14))
+#define TAU_WEIGHT (double) (1/(sqrt(2)*sig_noise))*(1/(sqrt(2)*sig_noise))
 
 // std::string rover_dir = "../data/rooftop4/data_rover/";
 // std::string station_dir = "../data/rooftop4/data_station/";
@@ -357,7 +362,7 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
                 }
 
                 if (use_df_pr && !std::isnan(pr_value) && !std::isnan(pr_value_station) && !check_sv_data(sv_pos_data[epoch][satellite])){
-                    double df_pr_weight_tau = 1/(df_pr_weight + tau_weight);
+                    double df_pr_weight_tau = 1/(1/df_pr_weight + 1/tau_weight);
                       factor::DiffPesudorangeTauFactorCostFunctor* functor_prTau = 
                         new factor::DiffPesudorangeTauFactorCostFunctor(ref_location, sv_pos_data[epoch][satellite], 
                                                                     pr_value-pr_value_station, satellite_type, df_pr_weight_tau, satellite);
@@ -485,7 +490,7 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
         }
         fout_ecef << endl;
 
-        cout << "Epoch " << epoch <<  "| Clock: "<< position[3] <<" | Noise: ";
+        cout << "| Epoch " << epoch <<  " | Clock: "<< position[3] <<" | Noise: ";
         for(int i=0; i<num_var_meas; i++) {
             cout << noise[i] << ", " ;
         }
@@ -577,15 +582,17 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
         if (covariance_result){
             double covariance_matrix[num_var_pos * num_var_pos];
             covariance.GetCovarianceBlock(position, position, covariance_matrix); 
-            // std::cout << "Covariance Matrix:\n";
+            // std::cout << "| Epoch " << epoch<< " | Covariance Matrix: ";
             for (int i = 0; i < num_var_pos; i++) {
                 for (int j = 0; j < num_var_pos; j++) {
-                    // std::cout << covariance_matrix[num_var_pos * i + j] << " ";
                     fout_cov << covariance_matrix[num_var_pos * i + j] << ", ";
+                    // if (i == j) {
+                    //     std::cout << covariance_matrix[num_var_pos * i + j] << " ";
+                    // }
                 }
-                // std::cout << endl;
                 fout_cov << endl;
             }
+            // std::cout << endl;
         }    
 
     }
