@@ -81,7 +81,7 @@ bool parseCommandLineOptions(int argc, char* argv[],
         desc.add_options()
             ("help", "produce help message")
             ("disable-df-pr", po::value<bool>(&use_df_pr)->default_value(true)->implicit_value(false), "Disable DF-PR")
-            ("disable-tdcp", po::value<bool>(&use_tdcp)->default_value(false)->implicit_value(false), "Disable TDCP")
+            ("disable-tdcp", po::value<bool>(&use_tdcp)->default_value(true)->implicit_value(false), "Disable TDCP")
             ("disable-imu", po::value<bool>(&use_imu)->default_value(true)->implicit_value(false), "Disable IMU")
             ("disable-clock-const", po::value<bool>(&use_clock_const)->default_value(true)->implicit_value(false), "Disable Clock Const")
             ("disable-tau", po::value<bool>(&use_tau)->default_value(true)->implicit_value(false), "Disable Tau Factor")
@@ -291,7 +291,7 @@ int runOptimization(double tau, int seed, const std::string& matlab_save_dir, si
     // options.line_search_direction_type = ceres::LBFGS;  // BFGS 방법 사용
     options.minimizer_progress_to_stdout = true;  // 'Display','iter-detailed'에 대응
     options.gradient_tolerance = 1e-8;  // 'OptimalityTolerance'를 더 엄격하게
-    options.parameter_tolerance = 1e-10;  // 'TolX'를 더 엄격하게  
+    options.parameter_tolerance = 1e-5;  // 'TolX'를 더 엄격하게  
     options.function_tolerance = 1e-8;  // 'FunctionTolerance'를 더 엄격하게
     options.gradient_check_numeric_derivative_relative_step_size = 1e-7;  // 'FiniteDifferenceStepSize'를 더 엄격하게
     options.max_num_iterations = 1e+5;  // 'MaxIterations'를 늘려 더 많은 반복 허용
@@ -721,7 +721,7 @@ int main(int argc, char** argv) {
     // std::string folder_name = matlab_save_dir + constellation_name +"/rooftop4"+ "/epoch_" + std::to_string(start_epoch + 1) + "_T_" + std::to_string(T);
     
     
-    int seed_num = 100;
+    int seed_num = 1;
 
     for (int seed = 0; seed < seed_num; seed++) {
         runOptimization(tau, seed, matlab_save_dir, start_epoch, T, 
